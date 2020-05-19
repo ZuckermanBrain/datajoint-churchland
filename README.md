@@ -1,1 +1,1 @@
-Najja's pipeline  - Neural control of movment
+Najja J. Marshall's pipeline  - Neural control of movment

@@ -1,1 +1,1 @@
-Najja J. Marshall's pipeline  - Neural control of movment
+Datajoint pipeline for the Churchland Lab

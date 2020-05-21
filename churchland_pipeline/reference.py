@@ -9,21 +9,21 @@ class BrainRegion(dj.Lookup):
     ---
     brain_name : varchar(64) # brain region
     """
-    
+
     contents = [
         ['M1','primary motor cortex'],
         ['PMd','dorsal premotor cortex']
     ]
-    
+
 @schema
 class Muscle(dj.Lookup):
     definition = """
     muscle_abbrev : varchar(8) # muscle abbreviation
     ---
     muscle_name : varchar(64) # muscle name
-    muscle_head = null : varchar(64) # muscle head
+    muscle_head='' : varchar(64) # muscle head
     """
-    
+
     contents = [
         ['AntDel','deltoid','anterior'],
         ['LatDel','deltoid','lateral'],
@@ -32,7 +32,7 @@ class Muscle(dj.Lookup):
         ['LatTri','triceps','lateral'],
         ['LatMed','triceps','medial']
     ]
-    
+
 @schema
 class Sulcus(dj.Lookup):
     definition = """
@@ -40,7 +40,7 @@ class Sulcus(dj.Lookup):
     ---
     sulcus_name : varchar(64) # sulcus name
     """
-    
+
     contents = [
         ['LF','Longitudinal Fissure'],
         ['CS','Central Sulcus'],

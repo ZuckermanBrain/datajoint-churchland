@@ -13,12 +13,14 @@ class Session(dj.Manual):
     # Recording session
     session_date: date # session date
     -> lab.Monkey
-    ---
-    -> lab.User
-    -> [nullable] lab.User.proj(user2 = 'user') # secondary experimenter
-    -> [nullable] lab.User.proj(user3 = 'user') # tertiary experimenter
     """
-    
+
+    class User(dj.Part):
+        definition = """
+        -> master
+        -> lab.User
+        """
+
     class Notes(dj.Part):
         definition = """
         # Session notes
@@ -26,19 +28,19 @@ class Session(dj.Manual):
         ---
         session_notes: varchar(8192)
         """
-        
+
     class SaveTag(dj.Part):
         definition = """
         # Save tags and associated notes
         -> master
-        ---
         save_tag: tinyint unsigned # save tag
+        ---
         save_tag_notes: varchar(2048) # notes for the save tag
         """
-        
+
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 1
-# ------------------------------------------------------------------------------------------------------------------------------- 
+# -------------------------------------------------------------------------------------------------------------------------------
 
 @schema
 class EphysRecording(dj.Imported):
@@ -48,7 +50,7 @@ class EphysRecording(dj.Imported):
     ephys_file_path: varchar(512) # file path
     ephys_file_name: varchar(256) # file name
     """
-    
+
     class Meta(dj.Part):
         definition = """
         # Meta parameters for Ephys recording
@@ -60,7 +62,7 @@ class EphysRecording(dj.Imported):
         ephys_data_duration : double # recording duration [sec]
         ephys_channel_count : smallint unsigned # number of channels on the recording file
         """
-    
+
 @schema
 class ProblematicSession(dj.Manual):
     definition = """
@@ -69,7 +71,7 @@ class ProblematicSession(dj.Manual):
     ---
     problem_reason = '' : varchar(256)
     """
-    
+
 @schema
 class SpeedgoatRecording(dj.Imported):
     definition = """
@@ -78,7 +80,7 @@ class SpeedgoatRecording(dj.Imported):
     speedgoat_file_path: varchar(512) # file path
     speedgoat_file_name: varchar(256) # file name
     """
-    
+
     class Meta(dj.Part):
         definition = """
         # Meta parameters for Speedgoat recording
@@ -89,10 +91,10 @@ class SpeedgoatRecording(dj.Imported):
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 2
-# ------------------------------------------------------------------------------------------------------------------------------- 
-    
+# -------------------------------------------------------------------------------------------------------------------------------
+
 @schema
-class EmgChannels(dj.Imported):
+class EmgChannelGroup(dj.Imported):
     definition = """
     -> EphysRecording
     -> reference.Muscle
@@ -100,10 +102,18 @@ class EmgChannels(dj.Imported):
     -> ephys.EmgElectrode
     emg_channel_group : blob # array of channel numbers corresponding to EMG data
     emg_channel_notes : varchar(1024) # notes for the channel set
-    """   
-    
+    """
+
+    class Corrupted(dj.Part):
+        definition = """
+        # EMG channels to exclude from analyses
+        -> master
+        ---
+        corrupted_emg_channels = null : blob # array of corrupted channels
+        """
+
 @schema
-class NeuralChannels(dj.Imported):
+class NeuralChannelGroup(dj.Imported):
     definition = """
     -> EphysRecording
     -> reference.BrainRegion
@@ -113,7 +123,7 @@ class NeuralChannels(dj.Imported):
     neural_channel_group: blob # array of channel numbers corresponding to neural data
     neural_channel_notes: varchar(1024) # notes for the channel set
     """
-    
+
     class ProbeDepth(dj.Part):
         definition = """
         # Depth of recording probe relative to cortical surface
@@ -122,7 +132,7 @@ class NeuralChannels(dj.Imported):
         ---
         probe_depth : decimal(5,3) # depth of recording electrode [mm]
         """
-    
+
 @schema
 class SyncChannel(dj.Imported):
     definition = """
@@ -135,13 +145,4 @@ class SyncChannel(dj.Imported):
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 3
-# ------------------------------------------------------------------------------------------------------------------------------- 
-    
-@schema 
-class CorruptedEmgChannels(dj.Manual):
-    definition = """
-    # EMG channels to exclude from analyses
-    -> EmgChannels
-    ---
-    corrupted_emg_channels = null : blob # array of corrupted channels
-    """
+# -------------------------------------------------------------------------------------------------------------------------------

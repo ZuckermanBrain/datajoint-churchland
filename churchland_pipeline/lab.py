@@ -16,7 +16,7 @@ class Protocol(dj.Lookup):
     protocol: varchar(16)
     ---
     protocol_type: varchar(16)
-    protocol_description='' : varchar(256)
+    protocol_description='' : varchar(255)
     """
 
 @schema

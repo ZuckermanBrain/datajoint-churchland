@@ -11,8 +11,8 @@ schema = dj.schema('churchland_processing')
 class EmgSpikeSorter(dj.Lookup):
     definition = """
     # Spike sorter for EMG data
-    emg_sorter_name : varchar(64)
-    emg_sorter_version : varchar(8)
+    emg_sorter_name : varchar(255)
+    emg_sorter_version : varchar(255)
     ---
     """
     
@@ -20,8 +20,8 @@ class EmgSpikeSorter(dj.Lookup):
 class NeuralSpikeSorter(dj.Lookup):
     definition = """
     # Spike sorter for neural data
-    neural_sorter_name : varchar(64)
-    neural_sorter_version : varchar(8)
+    neural_sorter_name : varchar(255)
+    neural_sorter_version : varchar(255)
     ---
     """
     
@@ -38,7 +38,7 @@ class NeuralSpikeSorter(dj.Lookup):
 class MotorUnit(dj.Imported):
     definition = """
     # Sorted motor unit
-    -> acquisition.EmgChannels
+    -> acquisition.EmgChannelGroup
     motor_unit_id : smallint unsigned # unique unit ID
     ---
     -> EmgSpikeSorter
@@ -65,7 +65,7 @@ class MotorUnit(dj.Imported):
 class Neuron(dj.Imported):
     definition = """
     # Sorted neuron
-    -> acquisition.NeuralChannels
+    -> acquisition.NeuralChannelGroup
     neuron_id : smallint unsigned # unique unit ID
     ---
     -> NeuralSpikeSorter

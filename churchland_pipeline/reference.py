@@ -5,9 +5,9 @@ schema = dj.schema('churchland_reference')
 @schema
 class BrainRegion(dj.Lookup):
     definition = """
-    brain_abbrev : varchar(8) # brain region abbreviation
+    brain_abbrev : varchar(255) # brain region abbreviation
     ---
-    brain_name : varchar(64) # brain region
+    brain_name : varchar(255) # brain region
     """
 
     contents = [
@@ -18,10 +18,10 @@ class BrainRegion(dj.Lookup):
 @schema
 class Muscle(dj.Lookup):
     definition = """
-    muscle_abbrev : varchar(8) # muscle abbreviation
+    muscle_abbrev : varchar(255) # muscle abbreviation
     ---
-    muscle_name : varchar(64) # muscle name
-    muscle_head='' : varchar(64) # muscle head
+    muscle_name : varchar(255) # muscle name
+    muscle_head='' : varchar(255) # muscle head
     """
 
     contents = [
@@ -36,9 +36,9 @@ class Muscle(dj.Lookup):
 @schema
 class Sulcus(dj.Lookup):
     definition = """
-    sulcus_abbrev : varchar(8) # sulcus abbreviation
+    sulcus_abbrev : varchar(255) # sulcus abbreviation
     ---
-    sulcus_name : varchar(64) # sulcus name
+    sulcus_name : varchar(255) # sulcus name
     """
 
     contents = [

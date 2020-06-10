@@ -17,11 +17,17 @@ class ArmPosture(dj.Lookup):
     elbow_angle : tinyint unsigned # elbow flexion angle in degrees (0 = fully flexed)
     shoulder_angle : tinyint unsigned # shoulder flexion angle in degrees (0 = arm by side)
     """
+    
+    contents = [
+        ['Cousteau', 1, 90, 65],
+        ['Cousteau', 2, 90, 40],
+        ['Cousteau', 3, 90, 75]
+    ]
 
 @schema
-class SimulinkState(dj.Lookup):
+class TaskState(dj.Lookup):
     definition = """
-    # Simulink Stateflow state IDs and names
+    # Simulink Stateflow task state IDs and names
     task_state_id : tinyint unsigned # task state ID number
     ---
     task_state_name : varchar(255) # unique task state name
@@ -105,7 +111,7 @@ class Task(dj.Imported):
 class TrialAlignment(dj.Lookup):
     definition = """
     # Task state IDs used to align trials
-    -> SimulinkState
+    -> TaskState
     ---
     """
 
@@ -205,6 +211,7 @@ class MotorUnitPsth(dj.Computed):
     -> SessionBlock
     ---
     motor_unit_psth : longblob # psth
+    -> processing.Filter
     """
     
 @schema
@@ -214,6 +221,7 @@ class MotorUnitRate(dj.Computed):
     -> MotorUnitSpikes
     ---
     motor_unit_rate : longblob # trial-aligned firing rate [Hz]
+    -> processing.Filter
     """
 
 @schema
@@ -224,6 +232,7 @@ class NeuronPsth(dj.Computed):
     -> SessionBlock
     ---
     neuron_psth : longblob # psth
+    -> processing.Filter
     """    
     
 @schema
@@ -233,6 +242,7 @@ class NeuronRate(dj.Computed):
     -> NeuronSpikes
     ---
     neuron_rate : longblob # trial-aligned firing rate [Hz]
+    -> processing.Filter
     """
     
 @schema

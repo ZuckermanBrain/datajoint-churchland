@@ -13,12 +13,15 @@ class Session(dj.Manual):
     # Recording session
     session_date: date # session date
     -> lab.Monkey
+    ---
+    -> lab.Rig
     """
 
     class User(dj.Part):
         definition = """
         -> master
         -> lab.User
+        ---
         """
 
     class Notes(dj.Part):
@@ -55,8 +58,7 @@ class EphysRecording(dj.Imported):
     definition = """
     -> Session
     ---
-    ephys_file_path: varchar(4095) # file path
-    ephys_file_name: varchar(255) # file name
+    ephys_file_path: varchar(1012) # file path (temporary until issues with filepath attribute are resolved)
     """
 
     class AcquisitionParams(dj.Part):
@@ -76,8 +78,7 @@ class SpeedgoatRecording(dj.Imported):
     definition = """
     -> Session
     ---
-    speedgoat_file_path: varchar(4095) # file path
-    speedgoat_file_name: varchar(255) # file name
+    speedgoat_file_path: varchar(1012) # file path (temporary until issues with filepath attribute are resolved)
     """
 
     class AcquisitionParams(dj.Part):
@@ -108,7 +109,7 @@ class EmgChannelGroup(dj.Imported):
         # Subset of EMG channels ammenable to spike sorting
         -> master
         ---
-        corrupted_emg_channels : blob # array of corrupted channels
+        sortable_emg_channels : blob # subset of channels used for spike sorting 
         """   
 
 @schema

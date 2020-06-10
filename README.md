@@ -2,6 +2,9 @@
 
 ## Pipeline schemas
 
+### Common pipeline
+![common erd](churchland_pipeline/images/common_erd.png)
+
 ### Full pipeline
 
 ![full erd](churchland_pipeline/images/full_erd.png)

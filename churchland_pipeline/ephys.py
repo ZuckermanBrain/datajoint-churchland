@@ -5,7 +5,7 @@ schema = dj.schema('churchland_ephys')
 @schema
 class EmgElectrode(dj.Lookup):
     definition = """
-    emg_electrode_abbrev: varchar(255) # unique electrode abbreviation
+    emg_electrode_abbrev: varchar(16) # unique electrode abbreviation
     ---
     emg_electrode_manufacturer: varchar(255) # electrode manufacturer
     emg_electrode_name: varchar(255) # full electrode name
@@ -15,7 +15,7 @@ class EmgElectrode(dj.Lookup):
 @schema
 class NeuralElectrode(dj.Lookup):
     definition = """
-    neural_electrode_abbrev: varchar(255) # unique electrode abbreviation
+    neural_electrode_abbrev: varchar(16) # unique electrode abbreviation
     ---
     neural_electrode_manufacturer: varchar(255) # electrode manufacturer
     neural_electrode_name: varchar(255) # full electrode name

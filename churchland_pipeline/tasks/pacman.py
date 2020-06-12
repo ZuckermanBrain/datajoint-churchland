@@ -17,15 +17,36 @@ class ArmPosture(dj.Lookup):
     elbow_angle : tinyint unsigned # elbow flexion angle in degrees (0 = fully flexed)
     shoulder_angle : tinyint unsigned # shoulder flexion angle in degrees (0 = arm by side)
     """
+    
+    contents = [
+        ['Cousteau', 1, 90, 65],
+        ['Cousteau', 2, 90, 40],
+        ['Cousteau', 3, 90, 75]
+    ]
 
 @schema
-class SimulinkState(dj.Lookup):
+class TaskState(dj.Lookup):
     definition = """
-    # Simulink Stateflow state IDs and names
-    state_id : tinyint unsigned # unique task state ID number
+    # Simulink Stateflow task state IDs and names
+    task_state_id : tinyint unsigned # task state ID number
     ---
-    state_name : varchar(64) # task state name
-    """    
+    task_state_name : varchar(255) # unique task state name
+    """
+    
+    contents = [
+        [0,   'Init'],
+        [1,   'Delay'],
+        [2,   'PreTrial'],
+        [3,   'FirstDotAppears'],
+        [4,   'InFirstPad'],
+        [5,   'InTarget'],
+        [6,   'InSecondPad'],
+        [7,   'PastLastDot'],
+        [100, 'Success'],
+        [251, 'Glitch'],
+        [252, 'Abort'],
+        [253, 'Failure'] 
+    ]
     
 @schema
 class Task(dj.Imported):
@@ -81,28 +102,55 @@ class Task(dj.Imported):
         reward : longblob # reward delivery
         photobox : longblob # photobox signal
         """
-    
-@schema
-class TrialAlignment(dj.Imported):
-    definition = """
-    -> acquisition.SyncChannel
-    trial_number : smallint unsigned # trial number (within session)
-    ---
-    alignment_index : int unsigned # alignment index (in Speedgoat time base)
-    speedgoat_alignment : longblob # alignment indices for Speedgoat data
-    ephys_alignment : longblob # alignment indices for Ephys data
-    """    
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 1
 # -------------------------------------------------------------------------------------------------------------------------------
 
 @schema
+class TrialAlignment(dj.Lookup):
+    definition = """
+    # Task state IDs used to align trials
+    -> TaskState
+    ---
+    """
+
+# -------------------------------------------------------------------------------------------------------------------------------
+# LEVEL 2
+# -------------------------------------------------------------------------------------------------------------------------------
+
+@schema
+class AlignmentIndices(dj.Imported):
+    definition = """
+    -> TrialAlignment
+    -> acquisition.SyncChannel
+    trial_number : smallint unsigned # trial number (within session)
+    ---
+    alignment_index : int unsigned # alignment index (in Speedgoat time base)
+    speedgoat_alignment : longblob # alignment indices for Speedgoat data
+    ephys_alignment : longblob # alignment indices for Ephys data
+    """   
+    
+# -------------------------------------------------------------------------------------------------------------------------------
+# LEVEL 3
+# -------------------------------------------------------------------------------------------------------------------------------    
+@schema
+class Emg(dj.Imported):
+    definition = """
+    # raw, trialized, and aligned EMG data
+    -> acquisition.EmgChannelGroup
+    -> AlignmentIndices
+    emg_channel : tinyint unsigned # channel number (indexed relative to EMG channel group)
+    ---
+    emg_channel_data : longblob # channel data
+    """
+
+@schema
 class Force(dj.Computed):
     definition = """
     # Single trial force
     -> Task.Trial
-    -> TrialAlignment
+    -> AlignmentIndices
     ---
     force_raw = null : longblob # aligned raw (online) force [Volts]
     force_filt = null : longblob # offline filtered, aligned, and calibrated force [Newtons]
@@ -113,7 +161,7 @@ class MotorUnitSpikes(dj.Computed):
     definition = """
     # Aligned motor unit trial spikes
     -> processing.MotorUnit.SessionSpikes
-    -> TrialAlignment
+    -> AlignmentIndices
     ---
     motor_unit_spikes : longblob # trial-aligned spike raster (logical)
     """
@@ -123,11 +171,10 @@ class NeuronSpikes(dj.Computed):
     definition = """
     # Aligned neuron trial spikes
     -> processing.Neuron.SessionSpikes
-    -> TrialAlignment
+    -> AlignmentIndices
     ---
     neuron_spikes : longblob # trial-aligned spike raster (logical)
     """
-    
     
 @schema
 class SessionBlock(dj.Manual):
@@ -141,7 +188,7 @@ class SessionBlock(dj.Manual):
     """
     
 # -------------------------------------------------------------------------------------------------------------------------------
-# LEVEL 2
+# LEVEL 4
 # -------------------------------------------------------------------------------------------------------------------------------
     
 @schema 
@@ -164,6 +211,7 @@ class MotorUnitPsth(dj.Computed):
     -> SessionBlock
     ---
     motor_unit_psth : longblob # psth
+    -> processing.Filter
     """
     
 @schema
@@ -173,6 +221,7 @@ class MotorUnitRate(dj.Computed):
     -> MotorUnitSpikes
     ---
     motor_unit_rate : longblob # trial-aligned firing rate [Hz]
+    -> processing.Filter
     """
 
 @schema
@@ -183,6 +232,7 @@ class NeuronPsth(dj.Computed):
     -> SessionBlock
     ---
     neuron_psth : longblob # psth
+    -> processing.Filter
     """    
     
 @schema
@@ -192,6 +242,7 @@ class NeuronRate(dj.Computed):
     -> NeuronSpikes
     ---
     neuron_rate : longblob # trial-aligned firing rate [Hz]
+    -> processing.Filter
     """
     
 @schema
@@ -204,7 +255,7 @@ class TrialBlock(dj.Computed):
     """    
     
 # -------------------------------------------------------------------------------------------------------------------------------
-# LEVEL 3
+# LEVEL 5
 # ------------------------------------------------------------------------------------------------------------------------------- 
 
 @schema 

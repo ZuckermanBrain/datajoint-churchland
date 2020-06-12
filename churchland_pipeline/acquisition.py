@@ -13,12 +13,15 @@ class Session(dj.Manual):
     # Recording session
     session_date: date # session date
     -> lab.Monkey
+    ---
+    -> lab.Rig
     """
 
     class User(dj.Part):
         definition = """
         -> master
         -> lab.User
+        ---
         """
 
     class Notes(dj.Part):
@@ -26,7 +29,7 @@ class Session(dj.Manual):
         # Session notes
         -> master
         ---
-        session_notes: varchar(8192)
+        session_notes: varchar(4095)
         """
 
     class SaveTag(dj.Part):
@@ -35,7 +38,15 @@ class Session(dj.Manual):
         -> master
         save_tag: tinyint unsigned # save tag
         ---
-        save_tag_notes: varchar(2048) # notes for the save tag
+        save_tag_notes: varchar(4095) # notes for the save tag
+        """
+        
+    class Problem(dj.Part):
+        definition = """
+        # Problem with specified session
+        -> master
+        ---
+        problem_cause: varchar(255) # (e.g. corrupted data)
         """
 
 # -------------------------------------------------------------------------------------------------------------------------------
@@ -47,46 +58,35 @@ class EphysRecording(dj.Imported):
     definition = """
     -> Session
     ---
-    ephys_file_path: varchar(512) # file path
-    ephys_file_name: varchar(256) # file name
+    ephys_file_path: varchar(1012) # file path (temporary until issues with filepath attribute are resolved)
     """
 
-    class Meta(dj.Part):
+    class AcquisitionParams(dj.Part):
         definition = """
-        # Meta parameters for Ephys recording
+        # Acquisition parameters for Ephys recording (inferred from Blackrock file)
         -> master
         ---
         ephys_sample_rate : smallint unsigned # sample rate [Hz]
-        ephys_time_stamp : double # clock start time [sec]
+        ephys_time_stamp : double # number of samples between pressing "record" and the clock start (Blackrock parameter)
         ephys_data_samples : int unsigned # recording duration [samples]
         ephys_data_duration : double # recording duration [sec]
         ephys_channel_count : smallint unsigned # number of channels on the recording file
         """
 
 @schema
-class ProblematicSession(dj.Manual):
-    definition = """
-    # Problematic sessions
-    -> Session
-    ---
-    problem_reason = '' : varchar(256)
-    """
-
-@schema
 class SpeedgoatRecording(dj.Imported):
     definition = """
     -> Session
     ---
-    speedgoat_file_path: varchar(512) # file path
-    speedgoat_file_name: varchar(256) # file name
+    speedgoat_file_path: varchar(1012) # file path (temporary until issues with filepath attribute are resolved)
     """
 
-    class Meta(dj.Part):
+    class AcquisitionParams(dj.Part):
         definition = """
-        # Meta parameters for Speedgoat recording
+        # Acquisition parameters for Speedgoat recording
         -> master
         ---
-        speedgoat_sample_rate : smallint unsigned # sample rate [Hz]
+        speedgoat_sample_rate = 1e3 : smallint unsigned # sample rate [Hz]
         """
 
 # -------------------------------------------------------------------------------------------------------------------------------
@@ -101,16 +101,16 @@ class EmgChannelGroup(dj.Imported):
     ---
     -> ephys.EmgElectrode
     emg_channel_group : blob # array of channel numbers corresponding to EMG data
-    emg_channel_notes : varchar(1024) # notes for the channel set
+    emg_channel_notes : varchar(4095) # notes for the channel set
     """
 
-    class Corrupted(dj.Part):
+    class Sortable(dj.Part):
         definition = """
-        # EMG channels to exclude from analyses
+        # Subset of EMG channels ammenable to spike sorting
         -> master
         ---
-        corrupted_emg_channels = null : blob # array of corrupted channels
-        """
+        sortable_emg_channels : blob # subset of channels used for spike sorting 
+        """   
 
 @schema
 class NeuralChannelGroup(dj.Imported):
@@ -120,29 +120,25 @@ class NeuralChannelGroup(dj.Imported):
     neural_electrode_id: tinyint unsigned # electrode number
     ---
     -> ephys.NeuralElectrode
+    hemisphere : enum("left","right") # which hemisphere are we recording from
     neural_channel_group: blob # array of channel numbers corresponding to neural data
-    neural_channel_notes: varchar(1024) # notes for the channel set
+    neural_channel_notes: varchar(4095) # notes for the channel set
     """
 
     class ProbeDepth(dj.Part):
         definition = """
-        # Depth of recording probe relative to cortical surface
+        # Depth of recording probe relative to cortical surface (N/A for array recordings)
         -> master
         -> Session.SaveTag
         ---
-        probe_depth : decimal(5,3) # depth of recording electrode [mm]
-        """
-
+        probe_depth = null : decimal(5,3) # depth of recording electrode [mm]
+        """     
+        
 @schema
 class SyncChannel(dj.Imported):
     definition = """
+    # Channel containing encoded signal for synchronizing ephys data with Speedgoat
     -> EphysRecording
     ---
     sync_channel_number: smallint unsigned # channel number
-    time_stamp: double # clock start time
-    data_duration: double # recording duration (seconds)
     """
-
-# -------------------------------------------------------------------------------------------------------------------------------
-# LEVEL 3
-# -------------------------------------------------------------------------------------------------------------------------------

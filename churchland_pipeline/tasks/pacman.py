@@ -25,6 +25,81 @@ class ArmPosture(dj.Lookup):
     ]
 
 @schema
+class ForceParams(dj.Lookup):
+    definition = """
+    # Force parameters for Pac-Man task
+    force_id : smallint unsigned # ID number
+    ---
+    force_max : tinyint unsigned # maximum force [Newtons]
+    force_offset : decimal(5,4) # force offset to compensate for arm weight [Newtons]
+    force_direction : enum("push","pull") # indicates whether pushing or pulling moves Pac-Man upwards onscreen
+    """
+    
+@schema
+class StimParams(dj.Lookup):
+    definition = """
+    # Cerestim parameters
+    stim_id : smallint unsigned # ID number
+    ---
+    stim_current : smallint unsigned # stim current (uA)
+    stim_electrode : smallint unsigned # stim electrode number
+    stim_polarity : tinyint unsigned # stim polarity
+    stim_pulses : tinyint unsigned # number of pulses in stim train
+    stim_width1 : smallint unsigned # first pulse duration (us)
+    stim_width2 : smallint unsigned # second pulse duration (us)
+    stim_interphase : smallint unsigned # interphase duration (us)
+    stim_frequency : smallint unsigned # stim frequency (Hz)
+    """
+
+@schema
+class TargetParams(dj.Lookup):
+    definition = """
+    # Target force profiles for Pac-Man task
+    target_id : smallint unsigned # ID number
+    target_type : varchar(8) # short target identifier
+    ---
+    target_duration : decimal(5,4) # target duration [seconds]
+    target_offset : decimal(5,4) # offset from baseline [proportion playable window]
+    target_pad : decimal(5,4) # duration of "padding" dots leading into and out of target [seconds]
+    """
+    
+    class Static(dj.Part):
+        definition = """
+        # Static force profile (type code: STA)
+        -> master
+        ---
+        """
+        
+    class Ramp(dj.Part):
+        definition = """
+        # Linear ramp force profile (type code: RMP)
+        -> master
+        ---
+        target_amplitude : decimal(5,4) # target amplitude [proportion playable window]
+        """
+        
+    class Sine(dj.Part):
+        definition = """
+        # Sinusoidal (single-frequency) force profile (type code: SIN)
+        -> master
+        ---
+        target_amplitude : decimal(5,4) # target amplitude [proportion playable window]
+        target_frequency : decimal(5,4) # sinusoid frequency [Hz]
+        """
+        
+    class Chirp(dj.Part):
+        definition = """
+        # Chirp force profile (type code: CHP)
+        -> master
+        ---
+        target_amplitude : decimal(5,4) # target amplitude [proportion playable window]
+        target_frequency_init : decimal(5,4) # initial frequency [Hz]
+        target_frequency_final : decimal(5,4) # final frequency [Hz]
+        """
+        
+    # power function, sum of sines, triangle waves...
+    
+@schema
 class TaskState(dj.Lookup):
     definition = """
     # Simulink Stateflow task state IDs and names
@@ -48,11 +123,15 @@ class TaskState(dj.Lookup):
         [253, 'Failure'] 
     ]
     
+# -------------------------------------------------------------------------------------------------------------------------------
+# LEVEL 1
+# -------------------------------------------------------------------------------------------------------------------------------
+    
 @schema
-class Task(dj.Imported):
+class Behavior(dj.Imported):
     definition = """
-    # Speedgoat task data parser
-    -> acquisition.SpeedgoatRecording
+    # Behavioral data imported from Speedgoat
+    -> acquisition.BehaviorRecording
     ---
     """
     
@@ -60,28 +139,9 @@ class Task(dj.Imported):
         definition = """
         # Condition data
         -> master
-        targ_id: smallint unsigned # target condition ID
-        stim_id: smallint unsigned # stimulation condition ID
-        ---
-        force_polarity : tinyint # indicates whether pushing (polarity = 1) or pulling (polarity = -1) moves Pac-Man upwards
-        force_max : tinyint unsigned # maximum force [Newtons]
-        force_offset : decimal(5,4) # force offset to compensate for arm weight [Newtons]
-        target_type : char(3) # type code
-        target_offset : decimal(5,4) # offset
-        target_amplitude : decimal(5,4) # amplitude
-        target_duration : decimal(5,4) # duration
-        target_frequency1 : decimal(5,4) # primary frequency (initial, for chirp forces)
-        target_frequency2 : decimal(5,4) # secondary frequency (final, for chirp forces)
-        target_power : decimal(5,4) # power exponent
-        target_pad : decimal(5,4) # pad duration
-        stim_current : smallint unsigned # stim current (uA)
-        stim_electrode : smallint unsigned # stim electrode number
-        stim_polarity : tinyint unsigned # stim polarity
-        stim_pulses : tinyint unsigned # number of pulses in stim train
-        stim_width1 : smallint unsigned # first pulse duration (us)
-        stim_width2 : smallint unsigned # second pulse duration (us)
-        stim_interphase : smallint unsigned # interphase duration (us)
-        stim_frequency : smallint unsigned # stim frequency (Hz)
+        -> ForceParams
+        -> TargetParams
+        -> StimParams
         """
 
     class Trial(dj.Part):
@@ -90,22 +150,33 @@ class Task(dj.Imported):
         -> master
         trial_number : smallint unsigned # trial number (within session)
         ---
-        -> Task.Condition
+        -> Behavior.Condition
         save_tag : tinyint unsigned # save tag
-        valid_trial : tinyint unsigned # is valid trial (1=yes, 0=no)
         successful_trial : tinyint unsigned # is successful trial (1=yes, 0=no)
         simulation_time : longblob # absolute simulation time
         task_state : longblob # task state IDs
         force_raw_online : longblob # amplified output of load cell
         force_filt_online : longblob # online (boxcar) filtered and normalized force used to control Pac-Man
-        stim : longblob # ICMS delivery
-        reward : longblob # reward delivery
+        stim : longblob # TTL signal indicating the delivery of a stim pulse
+        reward : longblob # TTL signal indicating the delivery of juice reward
         photobox : longblob # photobox signal
         """
-
-# -------------------------------------------------------------------------------------------------------------------------------
-# LEVEL 1
-# -------------------------------------------------------------------------------------------------------------------------------
+        
+    def make(self, key):
+        
+        # locate summary file (temporary until behavior recording filepath attribute update)
+        sgPath = rawPath + str(key['session_date']) + '/speedgoat/'
+        sgFiles = sorted(list(os.listdir(sgPath)))
+        summaryFile = [x for x in sgFiles if re.search('.*\.summary',x) is not None][0]
+        
+        # speedgoat prefix
+        sgPrefix = sgPath + re.search('(.*)\.summary',summaryFile).group(1)
+        
+        # check for new task states
+        
+        # update lookup tables
+        
+        # populate session condition and trial tables
 
 @schema
 class TrialAlignment(dj.Lookup):
@@ -114,6 +185,10 @@ class TrialAlignment(dj.Lookup):
     -> TaskState
     ---
     """
+    
+    contents = [
+        [5]
+    ]
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 2
@@ -142,14 +217,14 @@ class Emg(dj.Imported):
     -> AlignmentIndices
     emg_channel : tinyint unsigned # channel number (indexed relative to EMG channel group)
     ---
-    emg_channel_data : longblob # channel data
+    emg_voltage_signal : longblob # channel data
     """
 
 @schema
 class Force(dj.Computed):
     definition = """
     # Single trial force
-    -> Task.Trial
+    -> Behavior.Trial
     -> AlignmentIndices
     ---
     force_raw = null : longblob # aligned raw (online) force [Volts]
@@ -160,7 +235,7 @@ class Force(dj.Computed):
 class MotorUnitSpikes(dj.Computed):
     definition = """
     # Aligned motor unit trial spikes
-    -> processing.MotorUnit.SessionSpikes
+    -> processing.MotorUnit
     -> AlignmentIndices
     ---
     motor_unit_spikes : longblob # trial-aligned spike raster (logical)
@@ -170,7 +245,7 @@ class MotorUnitSpikes(dj.Computed):
 class NeuronSpikes(dj.Computed):
     definition = """
     # Aligned neuron trial spikes
-    -> processing.Neuron.SessionSpikes
+    -> processing.Neuron
     -> AlignmentIndices
     ---
     neuron_spikes : longblob # trial-aligned spike raster (logical)
@@ -207,7 +282,7 @@ class BehaviorQuality(dj.Computed):
 class MotorUnitPsth(dj.Computed):
     definition = """
     # Peri-stimulus time histogram
-    -> processing.MotorUnit.SessionSpikes
+    -> processing.MotorUnit
     -> SessionBlock
     ---
     motor_unit_psth : longblob # psth
@@ -228,7 +303,7 @@ class MotorUnitRate(dj.Computed):
 class NeuronPsth(dj.Computed):
     definition = """
     # Peri-stimulus time histogram
-    -> processing.Neuron.SessionSpikes
+    -> processing.Neuron
     -> SessionBlock
     ---
     neuron_psth : longblob # psth
@@ -249,7 +324,7 @@ class NeuronRate(dj.Computed):
 class TrialBlock(dj.Computed):
     definition = """
     # Session block ID for each trial
-    -> Task.Trial
+    -> Behavior.Trial
     -> SessionBlock
     ---
     """    

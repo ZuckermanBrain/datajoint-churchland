@@ -86,15 +86,8 @@ class MotorUnit(dj.Imported):
     motor_unit_id : smallint unsigned # unique unit ID
     ---
     -> EmgSpikeSorter
+    motor_unit_session_spikes : longblob # array of spike indices
     """
-    
-    class SessionSpikes(dj.Part):
-        definition = """
-        # Full session spike indices
-        -> master
-        ---
-        motor_unit_session_spikes : longblob # array of spike indices
-        """
         
     class Template(dj.Part):
         definition = """
@@ -114,15 +107,8 @@ class Neuron(dj.Imported):
     ---
     -> NeuralSpikeSorter
     neuron_isolation : enum("single","multi") # neuron isolation quality (single- or multi-unit)
+    neuron_session_spikes : longblob # array of spike indices
     """
-    
-    class SessionSpikes(dj.Part):
-        definition = """
-        # Full session spike indices
-        -> master
-        ---
-        neuron_session_spikes : longblob # array of spike indices
-        """
         
     class Template(dj.Part):
         definition = """

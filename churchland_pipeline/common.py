@@ -4,3 +4,4 @@ from .ephys import *
 from .lab import *
 from .processing import *
 from .reference import *
+from .task import *

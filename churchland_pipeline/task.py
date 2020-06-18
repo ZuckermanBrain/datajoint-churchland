@@ -2,9 +2,7 @@
 
 import datajoint as dj
 
-
 schema = dj.schema('churchland_common_task')
-
 
 @schema
 class Task(dj.Lookup):
@@ -17,14 +15,12 @@ class Task(dj.Lookup):
         ['pacman', '']
     ]
 
-
 @schema
 class ParameterCategory(dj.Lookup):
     definition = """
     parameter_category   : varchar(16)
     """
     contents = zip(['stim', 'target'])
-
 
 @schema
 class Parameter(dj.Lookup):
@@ -34,7 +30,6 @@ class Parameter(dj.Lookup):
     -> ParameterCategory
     parameter_description="" : varchar(255)                 # info such as the unit
     """
-
 
 @schema
 class TaskParameterSet(dj.Lookup):

@@ -1,10 +1,31 @@
 import datajoint as dj
+import os
+import re
 from . import lab, ephys, reference
 
 schema = dj.schema('churchland_acquisition')
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 0
+# -------------------------------------------------------------------------------------------------------------------------------
+
+@schema
+class Task(dj.Lookup):
+    definition = """
+    # Experimental tasks
+    task : varchar(32) # unique task name
+    ---
+    task_description : varchar(255) # additional task details
+    """
+    
+    contents = [
+        ['Pacman', ''],
+        ['Pedaling', ''],
+        ['Reaching', '']
+    ]
+
+# -------------------------------------------------------------------------------------------------------------------------------
+# LEVEL ...
 # -------------------------------------------------------------------------------------------------------------------------------
 
 @schema
@@ -15,6 +36,7 @@ class Session(dj.Manual):
     -> lab.Monkey
     ---
     -> lab.Rig
+    -> Task
     """
 
     class User(dj.Part):
@@ -24,12 +46,13 @@ class Session(dj.Manual):
         ---
         """
 
-    class Notes(dj.Part):
+    class Note(dj.Part):
         definition = """
-        # Session notes
+        # Session note
         -> master
+        session_note_id : tinyint unsigned # note ID
         ---
-        session_notes: varchar(4095)
+        session_note: varchar(4095) # note text
         """
 
     class SaveTag(dj.Part):
@@ -38,7 +61,7 @@ class Session(dj.Manual):
         -> master
         save_tag: tinyint unsigned # save tag
         ---
-        save_tag_notes: varchar(4095) # notes for the save tag
+        save_tag_note: varchar(4095) # notes for the save tag
         """
         
     class Problem(dj.Part):
@@ -50,47 +73,64 @@ class Session(dj.Manual):
         """
 
 # -------------------------------------------------------------------------------------------------------------------------------
-# LEVEL 1
+# LEVEL ...
 # -------------------------------------------------------------------------------------------------------------------------------
 
 @schema
 class EphysRecording(dj.Imported):
     definition = """
+    # Electrophysiological recording
     -> Session
+    ephys_file_id : tinyint unsigned # file ID
     ---
     ephys_file_path: varchar(1012) # file path (temporary until issues with filepath attribute are resolved)
+    ephys_sample_rate : smallint unsigned # sampling rate for ephys data  [Hz]
+    ephys_duration : double # recording duration [sec]
+    ephys_channel_count : smallint unsigned # number of channels on the recording file
     """
 
-    class AcquisitionParams(dj.Part):
+    class BlackrockParams(dj.Part):
         definition = """
-        # Acquisition parameters for Ephys recording (inferred from Blackrock file)
+        # Ephys params unique to Blackrock system
         -> master
         ---
-        ephys_sample_rate : smallint unsigned # sample rate [Hz]
-        ephys_time_stamp : double # number of samples between pressing "record" and the clock start (Blackrock parameter)
-        ephys_data_samples : int unsigned # recording duration [samples]
-        ephys_data_duration : double # recording duration [sec]
-        ephys_channel_count : smallint unsigned # number of channels on the recording file
+        blackrock_time_stamp : double # number of samples between pressing "record" and the clock start
         """
 
 @schema
-class SpeedgoatRecording(dj.Imported):
+class BehaviorRecording(dj.Imported):
     definition = """
+    # Behavior recording, imported from Speedgoat files
     -> Session
     ---
-    speedgoat_file_path: varchar(1012) # file path (temporary until issues with filepath attribute are resolved)
+    behavior_summary_file_path : varchar(1012) # path to summary file (temporary)
+    behavior_sample_rate = 1e3 : smallint unsigned # sampling rate for behavioral data [Hz]
     """
-
-    class AcquisitionParams(dj.Part):
-        definition = """
-        # Acquisition parameters for Speedgoat recording
-        -> master
-        ---
-        speedgoat_sample_rate = 1e3 : smallint unsigned # sample rate [Hz]
-        """
+    
+    def make(self, key):
+        
+        # fetch session key
+        sessKey = (Session & key).fetch(as_dict=True)[0]
+        
+        # raw data path
+        rawPath = ('/srv/locker/churchland/{}/{}-task/{}/raw/'
+                   .format(sessKey['rig'], sessKey['task'].lower(), sessKey['monkey'].lower()))
+        
+        # find summary file
+        sgPath = rawPath + str(key['session_date']) + '/speedgoat/'
+        sgFiles = list(os.listdir(sgPath))
+        prog = re.compile('.*\.summary')
+        summaryFile = [x for x in sgFiles if prog.search(x) is not None][0]
+        
+        # save summary file path to key
+        key['behavior_summary_file_path'] = sgPath + summaryFile
+        key['behavior_sample_rate'] = int(1e3)
+        
+        # insert key
+        self.insert(key)
 
 # -------------------------------------------------------------------------------------------------------------------------------
-# LEVEL 2
+# LEVEL ...
 # -------------------------------------------------------------------------------------------------------------------------------
 
 @schema
@@ -137,7 +177,7 @@ class NeuralChannelGroup(dj.Imported):
 @schema
 class SyncChannel(dj.Imported):
     definition = """
-    # Channel containing encoded signal for synchronizing ephys data with Speedgoat
+    # Channel containing encoded signal for synchronizing ephys data with behavior
     -> EphysRecording
     ---
     sync_channel_number: smallint unsigned # channel number

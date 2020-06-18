@@ -22,16 +22,6 @@ class Monkey(dj.Lookup):
         ['Igor',     39914, 'M', '2009-04-11'],
         ['Eugustus', 1196,  'M', '1999-01-01']
     ]
-
-@schema
-class Protocol(dj.Lookup):
-    definition = """
-    # IACUC protocol
-    protocol : varchar(16)
-    ---
-    protocol_type : varchar(16)
-    protocol_description='' : varchar(255)
-    """
     
 @schema
 class Rig(dj.Lookup):

@@ -34,7 +34,7 @@ class EngramPath(dj.Lookup):
 
         # check if we're on the U19 server
         if os.path.isdir('/srv'):
-            path_parts.extend(['srv', engram_tier, 'churchland'])
+            path_parts.extend(['srv', engram_tier, 'churchland', ''])
 
         else:
             local_os = sys.platform

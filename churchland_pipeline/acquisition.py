@@ -14,60 +14,43 @@ schema = dj.schema('churchland_acquisition')
 # -------------------------------------------------------------------------------------------------------------------------------
 
 @schema
-class Path(dj.Lookup):
+class EngramPath(dj.Lookup):
     definition = """
-    global_path          : varchar(255)                 # global path name
-    system               : enum('windows','mac','linux')
-    ---
-    local_path           : varchar(255)                 # local computer path
-    net_location         : varchar(255)                 # location on the network
-    description=''       : varchar(255)
+    # Provides the local path to Engram whether working on the server or a local machine
+    engram_tier : varchar(32)               # engram data tier name
     """
 
     contents = [
-       ['/srv/locker/churchland', 'mac', '/Volumes/churchland-locker', '', '']
+        ['locker'],
+        ['labshare']
     ]
 
-    def get_local_path(self, path, local_os=None):
-        # determine local os
-        if local_os is None:
+    def getlocalpath(self):
+
+        assert len(self)==1, 'Request one path'
+
+        path_parts = ['']
+        engram_tier = self.fetch1('engram_tier')
+
+        # check if we're on the U19 server
+        if os.path.isdir('/srv'):
+            path_parts.extend(['srv', engram_tier, 'churchland', ''])
+
+        else:
             local_os = sys.platform
             local_os = local_os[:(min(3, len(local_os)))]
-        if local_os.lower() == 'glo':
-            local = 0
-            home = '~'
-        elif local_os.lower() == 'lin':
-            local = 1
-            home = os.environ['HOME']
-        elif local_os.lower() == 'win':
-            local = 2
-            home = os.environ['HOME']
-        elif local_os.lower() == 'dar':
-            local = 3
-            home = '~'
-        else:
-            raise NameError('unknown OS')
-        path = path.replace(os.path.sep, '/')
-        path = path.replace('~', home)
-        globs = dj.U('global_path') & self
-        systems = ['linux', 'windows', 'mac']
-        mapping = [[], []]
-        for iglob, glob in enumerate(globs.fetch('KEY')):
-            mapping[iglob].append(glob['global_path'])
-            for system in systems:
-                mapping[iglob].append((self & glob & {'system': system}).fetch1('local_path'))
-        mapping = np.asarray(mapping)
-        for i in range(len(globs)):
-            for j in range(len(systems)):
-                n = len(mapping[i, j])
-                if j != local and path[:n] == mapping[i, j][:n]:
-                    path = os.path.join(mapping[i, local], path[n+1:])
-                    break
-        if os.path.sep == '\\' and local_os.lower() != 'glo':
-            path = path.replace('/', '\\')
-        else:
-            path = path.replace('\\', '/')
-        return path
+            if local_os.lower() == 'lin':
+                path_parts.append('mnt')
+
+            elif local_os.lower() == 'win':
+                path_parts.append('Y:') # will this always be true?
+
+            elif local_os.lower() == 'dar':
+                path_parts.append('Volumes')
+
+            path_parts.extend(['Churchland-' + engram_tier, ''])
+
+        return os.path.sep.join(path_parts)
 
 @schema
 class SaveTagType(dj.Lookup):
@@ -157,10 +140,20 @@ class Session(dj.Manual):
         problem_cause: varchar(255) # (e.g. corrupted data)
         """
         
-    
-    def quickinsert(monkey, rig, task):
+    @classmethod
+    def getrawpath(self, monkey, rig, task):
         """
-        Quickly insert session data
+        Get path to raw data
+        """
+
+        local_path = (EngramPath & {'engram_tier': 'locker'}).getlocalpath()
+        raw_path_parts = [rig, task.lower()+'-task', monkey.lower(), 'raw', '']
+        return local_path + os.path.sep.join(raw_path_parts)
+    
+    @classmethod
+    def populate(self, monkey, rig, task):
+        """
+        Auto-populate session data
         """
         
         # check keys
@@ -169,18 +162,18 @@ class Session(dj.Manual):
         assert len(Task & {'task': task})==1,           'Unrecognized task'
 
         # session dates
-        rawPath = Session.rawpath(rig,task,monkey)
-        dates = sorted(list(os.listdir(rawPath)))
+        raw_path = Session.getrawpath(monkey, rig, task)
+        dates = sorted(list(os.listdir(raw_path)))
         dates = [x for x in dates if re.search('\d{4}-\d{2}-\d{2}',x) is not None]
 
         # import session data (can make task-specific later)
         for date in dates:
             
-            sessFiles = os.listdir(rawPath + date + '/')
+            sessFiles = os.listdir(raw_path + date + '/')
             
             # this will need to be updated for non-blackrock data files
             if (not any(Session & {'session_date': date})
-                and all([x in os.listdir(rawPath + date + '/') for x in ['speedgoat','blackrock']])):
+                and all([x in os.listdir(raw_path + date + '/') for x in ['speedgoat','blackrock']])):
 
                     # insert session
                     Session.insert1((date,monkey,rig,task))
@@ -195,18 +188,11 @@ class Session(dj.Manual):
                     if any(notesIdx):
 
                         notesFile = sessFiles[list(compress(range(len(notesIdx)), notesIdx))[0]]
-                        fid = open(rawPath + date + '/' + notesFile,'r')
+                        fid = open(raw_path + date + '/' + notesFile,'r')
                         notes = fid.read()
                         fid.close()
 
                         Session.Notes.insert1((date,monkey,0,notes))
-                        
-    def rawpath(rig,task,monkey):
-        """
-        Get path to raw data
-        """
-        
-        return '/srv/locker/churchland/{}/{}-task/{}/raw/'.format(rig, task.lower(), monkey.lower())
         
 
 # -------------------------------------------------------------------------------------------------------------------------------
@@ -241,31 +227,31 @@ class EphysRecording(dj.Imported):
     def make(self, key):
         
         # fetch session key
-        sessKey = (Session & key).fetch(as_dict=True)[0]
+        sess_key = (Session & key).fetch(as_dict=True)[0]
 
         # raw data path
-        rawPath = Session.rawpath(sessKey['rig'],sessKey['task'],sessKey['monkey']) + str(sessKey['session_date']) + '/'
+        raw_path = Session.getrawpath(sess_key['monkey'],sess_key['rig'],sess_key['task']) + str(sess_key['session_date']) + '/'
 
         # find ephys file
-        if 'blackrock' in os.listdir(rawPath):
+        if 'blackrock' in os.listdir(raw_path):
 
-            ephPath = rawPath + 'blackrock/'
+            eph_path = raw_path + 'blackrock/'
             prog = re.compile('.*(emg|neu|neu_emg)_00\d\.ns\d')
-            nsxPath = [ephPath + file for file in os.listdir(ephPath) if prog.search(file) is not None]
+            nsx_path = [eph_path + file for file in os.listdir(eph_path) if prog.search(file) is not None]
 
-            for i, pth in enumerate(nsxPath):
+            for i, pth in enumerate(nsx_path):
 
                 key['ephys_file_id'] = i
-                primaryKey = key.copy()
+                primary_key = key.copy()
                 
                 key['ephys_file_path'] = pth
 
                 # read channel count from basic header 
-                nsxFile = NsxFile(pth)
-                key['ephys_channel_count'] = nsxFile.basic_header['ChannelCount']
+                nsx_file = NsxFile(pth)
+                key['ephys_channel_count'] = nsx_file.basic_header['ChannelCount']
 
                 # read additional parameters from data file
-                nsxData = nsxFile.getdata(nsxFile.extended_headers[0]['ElectrodeID'])
+                nsxData = nsx_file.getdata(nsx_file.extended_headers[0]['ElectrodeID'])
                 key['ephys_sample_rate'] = int(nsxData['samp_per_s'])
                 key['ephys_duration'] = nsxData['data_time_s']
 
@@ -273,12 +259,12 @@ class EphysRecording(dj.Imported):
                 self.insert1(key)
 
                 # append Timestamp and save to Blackrock part table
-                key = primaryKey.copy()
+                key = primary_key.copy()
                 key['blackrock_timestamp'] = nsxData['data_headers'][0]['Timestamp']
                 self.BlackrockParams.insert1(key)
 
                 # close NSx file
-                nsxFile.close()
+                nsx_file.close()
                 
 @schema
 class BehaviorRecording(dj.Imported):
@@ -293,19 +279,19 @@ class BehaviorRecording(dj.Imported):
     def make(self, key):
         
         # fetch session key
-        sessKey = (Session & key).fetch(as_dict=True)[0]
+        sess_key = (Session & key).fetch(as_dict=True)[0]
         
         # raw data path
-        rawPath = Session.rawpath(sessKey['rig'],sessKey['task'],sessKey['monkey'])
+        raw_path = Session.getrawpath(sess_key['monkey'],sess_key['rig'],sess_key['task'])
         
         # find summary file
-        sgPath = rawPath + str(key['session_date']) + '/speedgoat/'
-        sgFiles = list(os.listdir(sgPath))
+        sg_path = raw_path + str(key['session_date']) + '/speedgoat/'
+        sg_files = list(os.listdir(sg_path))
         prog = re.compile('.*\.summary')
-        summaryFile = [x for x in sgFiles if prog.search(x) is not None][0]
+        summary_file = [x for x in sg_files if prog.search(x) is not None][0]
         
         # save summary file path to key
-        key['behavior_summary_file_path'] = sgPath + summaryFile
+        key['behavior_summary_file_path'] = sg_path + summary_file
         key['behavior_sample_rate'] = int(1e3)
         
         # insert key
@@ -368,20 +354,20 @@ class SyncChannel(dj.Imported):
     def make(self, key):
         
         # fetch file path
-        filePath = (EphysRecording & key).fetch1('ephys_file_path')
+        file_path = (EphysRecording & key).fetch1('ephys_file_path')
         
         # identify file type
-        if re.search('\.ns\d$',filePath):
+        if re.search('\.ns\d$',file_path):
             
             # read NSx file
-            nsxFile = NsxFile(filePath)
+            nsx_file = NsxFile(file_path)
             
             # identify sync electrode ID
-            key['sync_channel'] = ([header['ElectrodeID'] for header in nsxFile.extended_headers
+            key['sync_channel'] = ([header['ElectrodeID'] for header in nsx_file.extended_headers
                                            if header['ElectrodeLabel']=='ainp16'][0])
             
             # close file
-            nsxFile.close()
+            nsx_file.close()
             
         else:
             print('Unrecognized file type')

@@ -1,5 +1,5 @@
 import datajoint as dj
-from .. import lab, acquisition, processing
+from ... import lab, acquisition, processing
 
 schema = dj.schema('churchland_pacman')
 
@@ -55,8 +55,8 @@ class StimParams(dj.Lookup):
 class TargetParams(dj.Lookup):
     definition = """
     # Target force profiles for Pac-Man task
+    target_type : enum("STA", "RMP", "SIN", "CHP")
     target_id : smallint unsigned # ID number
-    target_type : varchar(8) # short target identifier
     ---
     target_duration : decimal(5,4) # target duration [seconds]
     target_offset : decimal(5,4) # offset from baseline [proportion playable window]
@@ -179,7 +179,7 @@ class Behavior(dj.Imported):
         # populate session condition and trial tables
 
 @schema
-class TrialAlignment(dj.Lookup):
+class AlignmentState(dj.Lookup):
     definition = """
     # Task state IDs used to align trials
     -> TaskState
@@ -195,12 +195,13 @@ class TrialAlignment(dj.Lookup):
 # -------------------------------------------------------------------------------------------------------------------------------
 
 @schema
-class AlignmentIndices(dj.Imported):
+class TrialAlignment(dj.Imported):
     definition = """
-    -> TrialAlignment
-    -> acquisition.SyncChannel
-    trial_number : smallint unsigned # trial number (within session)
+    # Alignment indices for each behavior trial
+    -> AlignmentState
+    -> Behavior.Trial
     ---
+    -> acquisition.SyncChannel
     alignment_index : int unsigned # alignment index (in Speedgoat time base)
     speedgoat_alignment : longblob # alignment indices for Speedgoat data
     ephys_alignment : longblob # alignment indices for Ephys data
@@ -214,7 +215,7 @@ class Emg(dj.Imported):
     definition = """
     # raw, trialized, and aligned EMG data
     -> acquisition.EmgChannelGroup
-    -> AlignmentIndices
+    -> TrialAlignment
     emg_channel : tinyint unsigned # channel number (indexed relative to EMG channel group)
     ---
     emg_voltage_signal : longblob # channel data
@@ -224,8 +225,7 @@ class Emg(dj.Imported):
 class Force(dj.Computed):
     definition = """
     # Single trial force
-    -> Behavior.Trial
-    -> AlignmentIndices
+    -> TrialAlignment
     ---
     force_raw = null : longblob # aligned raw (online) force [Volts]
     force_filt = null : longblob # offline filtered, aligned, and calibrated force [Newtons]
@@ -236,7 +236,7 @@ class MotorUnitSpikes(dj.Computed):
     definition = """
     # Aligned motor unit trial spikes
     -> processing.MotorUnit
-    -> AlignmentIndices
+    -> TrialAlignment
     ---
     motor_unit_spikes : longblob # trial-aligned spike raster (logical)
     """
@@ -246,7 +246,7 @@ class NeuronSpikes(dj.Computed):
     definition = """
     # Aligned neuron trial spikes
     -> processing.Neuron
-    -> AlignmentIndices
+    -> TrialAlignment
     ---
     neuron_spikes : longblob # trial-aligned spike raster (logical)
     """

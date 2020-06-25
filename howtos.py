@@ -1,3 +1,6 @@
+# Save config to json file
+dj.config.save_local()
+
 # Listing available schema
 dj.list_schemas()
 

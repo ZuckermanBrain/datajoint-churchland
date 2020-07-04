@@ -190,9 +190,50 @@ class AlignmentState(dj.Lookup):
         [5]
     ]
 
+@schema
+class SessionBlock(dj.Manual):
+    definition = """
+    # Set of save tags and arm postures for conducting analyses
+    -> acquisition.Session
+    block_id : tinyint unsigned # block ID
+    ---
+    -> ArmPosture
+    """
+    
+    class SaveTag(dj.Part):
+        definition = """
+        # Block save tags
+        -> master
+        -> acquisition.Session.SaveTag
+        """
+
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 2
 # -------------------------------------------------------------------------------------------------------------------------------
+
+@schema
+class MotorUnitPsth(dj.Computed):
+    definition = """
+    # Peri-stimulus time histogram
+    -> processing.MotorUnit
+    -> Behavior.Condition
+    -> SessionBlock
+    ---
+    motor_unit_psth : longblob # psth
+    -> processing.Filter
+    """
+
+@schema
+class NeuronPsth(dj.Computed):
+    definition = """
+    # Peri-stimulus time histogram
+    -> processing.Neuron
+    -> Behavior.Condition
+    -> SessionBlock
+    ---
+    neuron_psth : longblob # psth
+    -> processing.Filter
+    """
 
 @schema
 class TrialAlignment(dj.Imported):
@@ -201,12 +242,12 @@ class TrialAlignment(dj.Imported):
     -> AlignmentState
     -> Behavior.Trial
     ---
-    -> acquisition.SyncChannel
+    -> acquisition.EphysRecording.Electrode
     alignment_index : int unsigned # alignment index (in Speedgoat time base)
     speedgoat_alignment : longblob # alignment indices for Speedgoat data
     ephys_alignment : longblob # alignment indices for Ephys data
-    """   
-    
+    """
+
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 3
 # -------------------------------------------------------------------------------------------------------------------------------    
@@ -240,7 +281,7 @@ class MotorUnitSpikes(dj.Computed):
     ---
     motor_unit_spikes : longblob # trial-aligned spike raster (logical)
     """
-    
+
 @schema
 class NeuronSpikes(dj.Computed):
     definition = """
@@ -250,18 +291,7 @@ class NeuronSpikes(dj.Computed):
     ---
     neuron_spikes : longblob # trial-aligned spike raster (logical)
     """
-    
-@schema
-class SessionBlock(dj.Manual):
-    definition = """
-    # Set of save tags and arm postures for conducting analyses
-    -> acquisition.Session
-    block_id : tinyint unsigned # block ID
-    ---
-    -> ArmPosture
-    save_tags : blob # vector of save tags assigned to group
-    """
-    
+
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 4
 # -------------------------------------------------------------------------------------------------------------------------------
@@ -277,18 +307,7 @@ class BehaviorQuality(dj.Computed):
     mah_dist_target : decimal(6,4) # Mahalanobis distance relative to the target force
     mah_dist_mean : decimal(6,4) # Mahalanobis distance relative to the trial average
     """
-    
-@schema
-class MotorUnitPsth(dj.Computed):
-    definition = """
-    # Peri-stimulus time histogram
-    -> processing.MotorUnit
-    -> SessionBlock
-    ---
-    motor_unit_psth : longblob # psth
-    -> processing.Filter
-    """
-    
+
 @schema
 class MotorUnitRate(dj.Computed):
     definition = """
@@ -298,17 +317,6 @@ class MotorUnitRate(dj.Computed):
     motor_unit_rate : longblob # trial-aligned firing rate [Hz]
     -> processing.Filter
     """
-
-@schema
-class NeuronPsth(dj.Computed):
-    definition = """
-    # Peri-stimulus time histogram
-    -> processing.Neuron
-    -> SessionBlock
-    ---
-    neuron_psth : longblob # psth
-    -> processing.Filter
-    """    
     
 @schema
 class NeuronRate(dj.Computed):
@@ -327,8 +335,8 @@ class TrialBlock(dj.Computed):
     -> Behavior.Trial
     -> SessionBlock
     ---
-    """    
-    
+    """  
+
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 5
 # ------------------------------------------------------------------------------------------------------------------------------- 

@@ -1,10 +1,8 @@
+import os, sys, pathlib
+sys.path.insert(0, str(pathlib.Path(os.getcwd()).parents[0]) + '/brPY/')
 import datajoint as dj
-import os, sys
 import re
-from itertools import compress
 from . import lab, ephys, reference
-from pathlib import Path
-sys.path.insert(0, str(Path(os.getcwd()).parents[0]) + '/brPY/')
 from brpylib import NsxFile, brpylib_ver
 
 schema = dj.schema('churchland_acquisition')
@@ -24,6 +22,12 @@ class EngramPath(dj.Lookup):
         ['locker'],
         ['labshare']
     ]
+
+    def getglobalpath(self):
+
+        assert len(self)==1, 'Request one path'
+        path_parts = ['', 'srv', self.fetch1('engram_tier'), 'churchland', '']
+        return os.path.sep.join(path_parts) 
 
     def getlocalpath(self):
 
@@ -114,12 +118,12 @@ class Session(dj.Manual):
         session_notes: varchar(4095) # note text
         """
         
-        def printnotes(session, notesId=0):
+        def printnotes(self, session, notesId=0):
             """
             Fetch and print notes
             """
             
-            print((Session.Notes & {'session_date': session, 'session_notes_id': notesId}).fetch1('session_notes'))
+            print((self & {'session_date': session, 'session_notes_id': notesId}).fetch1('session_notes'))
             
             
     class SaveTag(dj.Part):
@@ -166,13 +170,15 @@ class Session(dj.Manual):
         dates = sorted(list(os.listdir(raw_path)))
         dates = [x for x in dates if re.search('\d{4}-\d{2}-\d{2}',x) is not None]
 
+        dates = [date for date in dates if date in ['2018-04-13','2019-01-30','2019-09-11','2020-01-06']]
+
         # import session data (can make task-specific later)
         for date in dates:
             
             sessFiles = os.listdir(raw_path + date + '/')
             
             # this will need to be updated for non-blackrock data files
-            if (not any(Session & {'session_date': date})
+            if (not Session & {'session_date': date}
                 and all([x in os.listdir(raw_path + date + '/') for x in ['speedgoat','blackrock']])):
 
                     # insert session
@@ -184,15 +190,16 @@ class Session(dj.Manual):
                         Session.User.insert1((date,monkey,'emt2177'))
 
                     # insert notes
-                    notesIdx = [re.search('.*notes\.txt',x) for x in sessFiles]
-                    if any(notesIdx):
-
-                        notesFile = sessFiles[list(compress(range(len(notesIdx)), notesIdx))[0]]
+                    try:
+                        notesFile = next(x for x in sessFiles if re.search('.*notes\.txt',x))
                         fid = open(raw_path + date + '/' + notesFile,'r')
                         notes = fid.read()
                         fid.close()
 
                         Session.Notes.insert1((date,monkey,0,notes))
+
+                    except StopIteration:
+                        pass
         
 
 # -------------------------------------------------------------------------------------------------------------------------------
@@ -209,7 +216,6 @@ class EphysRecording(dj.Imported):
     ephys_file_path: varchar(1012) # file path (temporary until issues with filepath attribute are resolved)
     ephys_sample_rate : smallint unsigned # sampling rate for ephys data  [Hz]
     ephys_duration : double # recording duration [sec]
-    ephys_channel_count : smallint unsigned # number of channels on the recording file
     """
 
     class BlackrockParams(dj.Part):
@@ -219,15 +225,21 @@ class EphysRecording(dj.Imported):
         ---
         blackrock_timestamp : double # number of samples between pressing "record" and the clock start
         """
-    
-    @property
-    def key_source(self):
-        return Session & {'session_date': '2019-12-16'}
+
+    class Electrode(dj.Part):
+        definition = """
+        # Ephys electrode
+        -> master
+        electrode_index : smallint unsigned # electrode index in data array
+        ---
+        electrode_id = null : varchar(8) # electrode ID used by recording system
+        electrode_label : enum('neural', 'emg', 'sync', 'stim')
+        """
     
     def make(self, key):
         
         # fetch session key
-        sess_key = (Session & key).fetch(as_dict=True)[0]
+        sess_key = (Session & key).fetch1()
 
         # raw data path
         raw_path = Session.getrawpath(sess_key['monkey'],sess_key['rig'],sess_key['task']) + str(sess_key['session_date']) + '/'
@@ -243,8 +255,6 @@ class EphysRecording(dj.Imported):
 
                 key['ephys_file_id'] = i
                 primary_key = key.copy()
-                
-                key['ephys_file_path'] = pth
 
                 # read channel count from basic header 
                 nsx_file = NsxFile(pth)
@@ -255,6 +265,11 @@ class EphysRecording(dj.Imported):
                 key['ephys_sample_rate'] = int(nsxData['samp_per_s'])
                 key['ephys_duration'] = nsxData['data_time_s']
 
+                # ensure global file path before inserting
+                local_path = (EngramPath & {'engram_tier':'locker'}).getlocalpath()
+                global_path = (EngramPath & {'engram_tier':'locker'}).getglobalpath()
+                key['ephys_file_path'] = pth.replace(local_path, global_path)
+
                 # insert self
                 self.insert1(key)
 
@@ -262,6 +277,25 @@ class EphysRecording(dj.Imported):
                 key = primary_key.copy()
                 key['blackrock_timestamp'] = nsxData['data_headers'][0]['Timestamp']
                 self.BlackrockParams.insert1(key)
+
+                # insert electrode header information
+                for j, elec in enumerate(nsx_file.extended_headers):
+                    key = primary_key.copy()
+                    key['electrode_index'] = j
+                    key['electrode_id'] = str(elec['ElectrodeID'])
+                    if isinstance(elec['ElectrodeID'], int):
+                        key['electrode_label'] = 'neural'
+
+                    elif re.search('ainp[1-8]$', elec['ElectrodeID']):
+                        key['electrode_label'] = 'emg'
+
+                    elif elec['ElectrodeID'] == 'ainp15':
+                        key['electrode_label'] = 'stim'
+
+                    elif elec['ElectrodeID'] == 'ainp16':
+                        key['electrode_label'] = 'sync'
+
+                    self.Electrode.insert1(key)
 
                 # close NSx file
                 nsx_file.close()
@@ -279,7 +313,7 @@ class BehaviorRecording(dj.Imported):
     def make(self, key):
         
         # fetch session key
-        sess_key = (Session & key).fetch(as_dict=True)[0]
+        sess_key = (Session & key).fetch1()
         
         # raw data path
         raw_path = Session.getrawpath(sess_key['monkey'],sess_key['rig'],sess_key['task'])
@@ -288,11 +322,15 @@ class BehaviorRecording(dj.Imported):
         sg_path = raw_path + str(key['session_date']) + '/speedgoat/'
         sg_files = list(os.listdir(sg_path))
         prog = re.compile('.*\.summary')
-        summary_file = [x for x in sg_files if prog.search(x) is not None][0]
-        
-        # save summary file path to key
-        key['behavior_summary_file_path'] = sg_path + summary_file
+        summary_file = next(x for x in sg_files if prog.search(x) is not None)
+
+        # behavior sample rate
         key['behavior_sample_rate'] = int(1e3)
+        
+        # ensure global file path before inserting
+        local_path = (EngramPath & {'engram_tier':'locker'}).getlocalpath()
+        global_path = (EngramPath & {'engram_tier':'locker'}).getglobalpath()
+        key['behavior_summary_file_path'] = (sg_path + summary_file).replace(local_path, global_path)
         
         # insert key
         self.insert1(key)
@@ -302,76 +340,50 @@ class BehaviorRecording(dj.Imported):
 # -------------------------------------------------------------------------------------------------------------------------------
 
 @schema
-class EmgChannelGroup(dj.Imported):
+class EmgChannelGroup(dj.Manual):
     definition = """
     -> EphysRecording
     -> reference.Muscle
     ---
     -> ephys.EmgElectrode
-    emg_channel_group : blob # array of channel ID numbers corresponding to EMG data
     emg_channel_notes : varchar(4095) # notes for the channel set
     """
 
-    class Sortable(dj.Part):
+    class Channel(dj.Part):
         definition = """
-        # Subset of EMG channels ammenable to spike sorting
+        # EMG channel number in group
         -> master
+        -> EphysRecording.Electrode
+        emg_channel : smallint unsigned # EMG channel index in group
         ---
-        sortable_emg_channels : blob # subset of channels used for spike sorting 
-        """   
+        emg_channel_quality : enum('sortable', 'hash', 'dead') # EMG channel quality
+        """
 
 @schema
-class NeuralChannelGroup(dj.Imported):
+class NeuralChannelGroup(dj.Manual):
     definition = """
     -> EphysRecording
     -> reference.BrainRegion
     neural_electrode_id: tinyint unsigned # electrode number
     ---
     -> ephys.NeuralElectrode
-    hemisphere : enum("left","right") # which hemisphere are we recording from
-    neural_channel_group : blob # array of channel ID numbers corresponding to neural data
+    hemisphere : enum('left', 'right') # which hemisphere are we recording from
     neural_channel_notes : varchar(4095) # notes for the channel set
     """
 
+    class Channel(dj.Part):
+        definition = """
+        # Channel number in group
+        -> master
+        -> EphysRecording.Electrode
+        neural_channel : smallint unsigned # neural channel index in group
+        """
+
     class ProbeDepth(dj.Part):
         definition = """
-        # Depth of recording probe relative to cortical surface (N/A for array recordings)
+        # Depth of recording probe relative to cortical surface
         -> master
         -> Session.SaveTag
         ---
-        probe_depth = null : decimal(5,3) # depth of recording electrode [mm]
-        """     
-        
-@schema
-class SyncChannel(dj.Imported):
-    definition = """
-    # Channel containing encoded signal for synchronizing ephys data with behavior
-    -> EphysRecording
-    ---
-    sync_channel : smallint unsigned # sync channel ID number
-    """
-    
-    def make(self, key):
-        
-        # fetch file path
-        file_path = (EphysRecording & key).fetch1('ephys_file_path')
-        
-        # identify file type
-        if re.search('\.ns\d$',file_path):
-            
-            # read NSx file
-            nsx_file = NsxFile(file_path)
-            
-            # identify sync electrode ID
-            key['sync_channel'] = ([header['ElectrodeID'] for header in nsx_file.extended_headers
-                                           if header['ElectrodeLabel']=='ainp16'][0])
-            
-            # close file
-            nsx_file.close()
-            
-        else:
-            print('Unrecognized file type')
-            return
-        
-        # insert key
-        self.insert1(key)
+        probe_depth : decimal(5,3) # depth of recording electrode [mm]
+        """

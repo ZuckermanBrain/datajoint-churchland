@@ -1,7 +1,7 @@
 import datajoint as dj
 from . import acquisition
 
-schema = dj.schema('churchland_processing')
+schema = dj.schema('churchland_common_processing')
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 0

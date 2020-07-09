@@ -1,6 +1,6 @@
 import datajoint as dj
 
-schema = dj.schema('churchland_lab')
+schema = dj.schema('churchland_common_lab')
 
 @schema
 class Monkey(dj.Lookup):

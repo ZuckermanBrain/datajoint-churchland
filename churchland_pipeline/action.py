@@ -1,19 +1,26 @@
 import datajoint as dj
-from . import lab, reference
+from . import lab, reference, equipment
 
-schema = dj.schema('churchland_action')
+schema = dj.schema('churchland_common_action')
 
 @schema
 class BurrHole(dj.Manual):
     definition = """
     -> lab.Monkey
-    burr_hole_inx: tinyint unsigned
+    burr_hole_index: tinyint unsigned
     ---
     burr_hole_date: date
     burr_hole_x: decimal(5,3) # (mm)
     burr_hole_y: decimal(5,3) # (mm)
-    -> lab.User
+    burr_hole_notes : varchar(4095)
     """
+
+    class User(dj.Part):
+        definition = """
+        # Burr hole personnel
+        -> master
+        -> lab.User
+        """
 
 # microstim
 
@@ -27,10 +34,11 @@ class MRI(dj.Manual):
     mri_x : decimal(6,3) # medial/lateral (+/-) coordinates [mm]
     mri_y : decimal(6,3) # dorsal/ventral (+/-) coordinates [mm]
     mri_z : decimal(6,3) # anterior/posterior (+/-) coordinates [mm]
-    # notes (?)
+    mri_notes : varchar(4095)
     """
 
 # palpation
+# surgery types? (implant, array, )
 
 
 @schema
@@ -39,6 +47,19 @@ class Surgery(dj.Manual):
     -> lab.Monkey
     surgery_date: date
     ---
-    -> lab.User
-        # notes (?)
+    surgery_notes : varchar(4095)
     """
+
+    class Equipment(dj.Part):
+        definition = """
+        # Equipment used for surgery
+        -> master
+        -> equipment.Surgery
+        """
+
+    class User(dj.Part):
+        definition = """
+        # Burr hole personnel
+        -> master
+        -> lab.User
+        """

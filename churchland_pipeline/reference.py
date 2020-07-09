@@ -1,6 +1,6 @@
 import datajoint as dj
 
-schema = dj.schema('churchland_reference')
+schema = dj.schema('churchland_common_reference')
 
 @schema
 class BrainRegion(dj.Lookup):

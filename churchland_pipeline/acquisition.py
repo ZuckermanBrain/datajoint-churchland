@@ -2,10 +2,10 @@ import os, sys, pathlib
 sys.path.insert(0, str(pathlib.Path(os.getcwd()).parents[0]) + '/brPY/')
 import datajoint as dj
 import re
-from . import lab, ephys, reference
+from . import lab, equipment, reference
 from brpylib import NsxFile, brpylib_ver
 
-schema = dj.schema('churchland_acquisition')
+schema = dj.schema('churchland_common_acquisition')
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 0
@@ -101,6 +101,24 @@ class Session(dj.Manual):
     -> lab.Rig
     -> Task
     """
+
+    class Equipment(dj.Part):
+        definition = """
+        # Equipment used for the recording session
+        -> master
+        """
+
+    class BehaviorEquipment(dj.Part):
+        definition = """
+        -> Session.Equipment
+        -> equipment.Behavior
+        """
+
+    class EphysEquipment(dj.Part):
+        definition = """
+        -> Session.Equipment
+        -> equipment.Ephys
+        """
 
     class User(dj.Part):
         definition = """
@@ -226,14 +244,14 @@ class EphysRecording(dj.Imported):
         blackrock_timestamp : double # number of samples between pressing "record" and the clock start
         """
 
-    class Electrode(dj.Part):
+    class Channel(dj.Part):
         definition = """
-        # Ephys electrode
+        # Ephys channel header
         -> master
-        electrode_index : smallint unsigned # electrode index in data array
+        channel_index : smallint unsigned # channel index in data array
         ---
-        electrode_id = null : varchar(8) # electrode ID used by recording system
-        electrode_label : enum('neural', 'emg', 'sync', 'stim')
+        channel_id = null : varchar(8) # channel ID used by recording system
+        channel_label : enum('neural', 'emg', 'sync', 'stim')
         """
     
     def make(self, key):
@@ -281,19 +299,19 @@ class EphysRecording(dj.Imported):
                 # insert electrode header information
                 for j, elec in enumerate(nsx_file.extended_headers):
                     key = primary_key.copy()
-                    key['electrode_index'] = j
-                    key['electrode_id'] = str(elec['ElectrodeID'])
+                    key['channel_index'] = j
+                    key['channel_id'] = str(elec['ElectrodeID'])
                     if isinstance(elec['ElectrodeID'], int):
-                        key['electrode_label'] = 'neural'
+                        key['channel_label'] = 'neural'
 
                     elif re.search('ainp[1-8]$', elec['ElectrodeID']):
-                        key['electrode_label'] = 'emg'
+                        key['channel_label'] = 'emg'
 
                     elif elec['ElectrodeID'] == 'ainp15':
-                        key['electrode_label'] = 'stim'
+                        key['channel_label'] = 'stim'
 
                     elif elec['ElectrodeID'] == 'ainp16':
-                        key['electrode_label'] = 'sync'
+                        key['channel_label'] = 'sync'
 
                     self.Electrode.insert1(key)
 
@@ -345,7 +363,8 @@ class EmgChannelGroup(dj.Manual):
     -> EphysRecording
     -> reference.Muscle
     ---
-    -> ephys.EmgElectrode
+    -> equipment.Ephys.EmgElectrode
+    -> [nullable] equipment.Ephys.EmgElectrodeMod
     emg_channel_notes : varchar(4095) # notes for the channel set
     """
 
@@ -353,7 +372,7 @@ class EmgChannelGroup(dj.Manual):
         definition = """
         # EMG channel number in group
         -> master
-        -> EphysRecording.Electrode
+        -> EphysRecording.Channel
         emg_channel : smallint unsigned # EMG channel index in group
         ---
         emg_channel_quality : enum('sortable', 'hash', 'dead') # EMG channel quality
@@ -364,9 +383,9 @@ class NeuralChannelGroup(dj.Manual):
     definition = """
     -> EphysRecording
     -> reference.BrainRegion
-    neural_electrode_id: tinyint unsigned # electrode number
+    neural_electrode_id: tinyint unsigned # recording electrode number
     ---
-    -> ephys.NeuralElectrode
+    -> equipment.Ephys.NeuralElectrode
     hemisphere : enum('left', 'right') # which hemisphere are we recording from
     neural_channel_notes : varchar(4095) # notes for the channel set
     """
@@ -375,7 +394,7 @@ class NeuralChannelGroup(dj.Manual):
         definition = """
         # Channel number in group
         -> master
-        -> EphysRecording.Electrode
+        -> EphysRecording.Channel
         neural_channel : smallint unsigned # neural channel index in group
         """
 

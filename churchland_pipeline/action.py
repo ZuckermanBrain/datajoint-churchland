@@ -54,7 +54,7 @@ class Surgery(dj.Manual):
         definition = """
         # Equipment used for surgery
         -> master
-        -> equipment.Surgery
+        -> equipment.Equipment
         """
 
     class User(dj.Part):

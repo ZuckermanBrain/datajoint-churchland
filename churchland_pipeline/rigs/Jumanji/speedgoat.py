@@ -6,6 +6,9 @@ import re
 import numpy as np
 from itertools import compress
 
+num_clock_bytes = 8
+num_len_bytes = 2
+
 # READ TASK STATES FROM SUMMARY
 def readtaskstates(filePath):
     
@@ -31,20 +34,16 @@ def readtaskstates(filePath):
     
 
 # READ TRIAL PARAMETERS
-def readtrialparams(filePrefix, trialNo):
-    
-    NUM_CLOCK_BYTES = 8
+def readtrialparams(file_path):
 
-    # full file
-    file = filePrefix + '_{}'.format(str(trialNo).zfill(4))
+    assert file_path.endswith('.params'), 'Unrecognized Speedgoat parameters file'
 
     # read params from file
-    fid = open(file + '.params', 'r')
-    data = np.fromfile(file=fid, dtype=np.uint8)
-    fid.close()
+    with open(file_path,'r') as f:
+        data = np.fromfile(file=f, dtype=np.uint8)
 
     # read parameter keys and values from string
-    paramStr = ';' + ''.join([chr(x) for x in data[NUM_CLOCK_BYTES:]])
+    paramStr = ';' + ''.join([chr(x) for x in data[num_clock_bytes:]])
     keys = re.findall(';(.*?):=',paramStr)
     vals = re.findall(':=(.*?);',paramStr)
 
@@ -60,23 +59,19 @@ def readtrialparams(filePrefix, trialNo):
     return params
 
 # READ TRIAL DATA
-def readtrialdata(filePrefix, trialNo):
+def readtrialdata(file_path, success_state, sample_rate):
+
+    assert file_path.endswith('.data'), 'Unrecognized Speedgoat data file'
     
-    NUM_CLOCK_BYTES = 8
-    NUM_LEN_BYTES = 2
-    SAMPLE_RATE = 1e3
-    SUCCESS_STATE = 100
-
-    # full file
-    file = filePrefix + '_{}'.format(str(trialNo).zfill(4))
-
     # read data from file
-    fid = open(file + '.data', 'r')
-    data = np.fromfile(file=fid, dtype=np.uint8)
-    fid.close()
+    with open(file_path,'r') as f:
+        data = np.fromfile(file=f, dtype=np.uint8)
+
+    # read trial number
+    trial_num = re.search(r'beh_(\d*)',file_path).group(1)
 
     # reshape data stream
-    nBytesPerTrial = int(NUM_CLOCK_BYTES + NUM_LEN_BYTES + np.uint16(data[NUM_CLOCK_BYTES : NUM_CLOCK_BYTES+1]))
+    nBytesPerTrial = int(num_clock_bytes + num_len_bytes + np.uint16(data[num_clock_bytes : num_clock_bytes+1]))
     data = data.reshape((nBytesPerTrial,-1), order='F')
 
     # Speedgoat to DataJoint trial data dictionary
@@ -91,15 +86,15 @@ def readtrialdata(filePrefix, trialNo):
         'photobox': 'frm'
     }
     
-    idx = int(NUM_CLOCK_BYTES + NUM_LEN_BYTES)
+    idx = int(num_clock_bytes + num_len_bytes)
     NUM_CODE_BYTES = 3
 
     # simulation time
-    SgTrial['simulation_time'] = data[:NUM_CLOCK_BYTES,:].flatten('F').view(np.double)
+    SgTrial['simulation_time'] = data[:num_clock_bytes,:].flatten('F').view(np.double)
 
     # check for dropped packets
-    if any([(x>int(0.5*SAMPLE_RATE)) and x<int(1.5*SAMPLE_RATE) for x in np.diff(SgTrial['simulation_time'])]):
-        print('Trial {} excluded due to dropped packets'.format(trialNo))
+    if any([(x>int(0.5*sample_rate)) and x<int(1.5*sample_rate) for x in np.diff(SgTrial['simulation_time'])]):
+        print('Trial {} excluded due to dropped packets'.format(trial_num))
         return
 
     # read coded data
@@ -137,12 +132,15 @@ def readtrialdata(filePrefix, trialNo):
 
     # trial result
     lastState = SgTrial['task_state'][-1]
-    if lastState < SUCCESS_STATE:
-        print('Trial {} was incomplete and excluded'.format(trialNo))
+    if lastState < success_state:
+        print('Trial {} was incomplete and excluded'.format(trial_num))
     else:
-        if lastState == SUCCESS_STATE:
+        if lastState == success_state:
             SgTrial['successful_trial'] = 1
         else:
             SgTrial['successful_trial'] = 0
+
+    # remove undecoded keys
+    SgTrial = {k: v for k,v in zip(SgTrial.keys(), SgTrial.values()) if not isinstance(v,str)}
                 
     return SgTrial

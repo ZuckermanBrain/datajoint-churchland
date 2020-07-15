@@ -1,7 +1,7 @@
 import datajoint as dj
 from . import acquisition
 
-schema = dj.schema('churchland_processing')
+schema = dj.schema('churchland_common_processing')
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 0
@@ -93,7 +93,7 @@ class MotorUnit(dj.Imported):
         definition = """
         # Sorted spike templates
         -> master
-        emg_channel : smallint unsigned # EMG channel number
+        -> acquisition.EmgChannelGroup.Channel
         ---
         motor_unit_template : longblob # waveform template
         """
@@ -114,7 +114,7 @@ class Neuron(dj.Imported):
         definition = """
         # Sorted spike templates
         -> master
-        neural_channel : smallint unsigned # neural channel number
+        -> acquisition.NeuralChannelGroup.Channel
         ---
         neuron_template : longblob # waveform template
         """

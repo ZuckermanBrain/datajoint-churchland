@@ -54,7 +54,6 @@ class ConditionParams(dj.Lookup):
         ---
         stim_current: smallint unsigned # stim current (uA)
         stim_electrode: smallint unsigned # stim electrode number
-        stim_delay: double # time relative to target onset when stim TTL was delivered (s)
         stim_polarity: tinyint unsigned # stim polarity
         stim_pulses: tinyint unsigned # number of pulses in stim train
         stim_width1: smallint unsigned # first pulse duration (us)
@@ -134,13 +133,14 @@ class ConditionParams(dj.Lookup):
             stim_key = dict(ChainMap(*[
                 {'stim_' + prog.search(k).group(1).lower(): v} 
                 for k,v in zip(params.keys(), params.values()) 
-                if prog.search(k) is not None
+                if prog.search(k) is not None and k != 'stimDelay'
                 ]))
 
             cond_rel = cond_rel * ConditionParams.Stim
             
         else:
             stim_key = dict()
+            cond_rel = cond_rel - ConditionParams.Stim
 
         # target key
         targ_key = {
@@ -191,21 +191,6 @@ class TaskState(dj.Lookup):
     task_state_name: varchar(255) # unique task state name
     """
     
-    contents = [
-        [0,   'Init'],
-        [1,   'Delay'],
-        [2,   'PreTrial'],
-        [3,   'FirstDotAppears'],
-        [4,   'InFirstPad'],
-        [5,   'InTarget'],
-        [6,   'InSecondPad'],
-        [7,   'PastLastDot'],
-        [100, 'Success'],
-        [251, 'Glitch'],
-        [252, 'Abort'],
-        [253, 'Failure'] 
-    ]
-    
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 1
 # -------------------------------------------------------------------------------------------------------------------------------
@@ -242,8 +227,6 @@ class Behavior(dj.Imported):
         photobox: longblob # photobox signal
         stim = null: longblob # TTL signal indicating the delivery of a stim pulse
         """
-
-    key_source = (acquisition.BehaviorRecording & {'session_date':'2018-10-02'})
         
     def make(self, key):
 
@@ -290,7 +273,7 @@ class Behavior(dj.Imported):
                     force_key, stim_key, targ_key, targ_type_key, cond_rel, targ_rel = ConditionParams.params2keys(params)
                     
                     # insert new condition if none exists
-                    if not(cond_rel & force_key & stim_key & targ_key):
+                    if not(cond_rel & force_key & stim_key & targ_key & targ_type_key):
 
                         # insert condition table
                         if not(ConditionParams()):
@@ -326,9 +309,7 @@ class Behavior(dj.Imported):
                             part.insert1(dict(ChainMap(cond_key, k)))
 
                         # insert second-layer condition target type part table
-                        if not(targ_rel & {'target_id': targ_key['target_id']} & targ_type_key):
-                            
-                            targ_rel.insert1(dict(ChainMap(cond_key, {'target_id': targ_key['target_id']}, targ_type_key)))
+                        targ_rel.insert1(dict(ChainMap(cond_key, {'target_id': targ_key['target_id']}, targ_type_key)))
 
                 else:
                     print('Missing data file for trial {}'.format(trial))
@@ -355,7 +336,7 @@ class Behavior(dj.Imported):
                     data = speedgoat.readtrialdata(beh_path + f_data, success_state, fs)
 
                     # insert condition data
-                    cond_id = (cond_rel & force_key & stim_key & targ_key).fetch1('condition_id')
+                    cond_id = (cond_rel & force_key & stim_key & targ_key & targ_type_key).fetch1('condition_id')
                     cond_key = dict(ChainMap(key, {'condition_id': cond_id}))
                     Behavior.Condition.insert1(cond_key, skip_duplicates=True)
 

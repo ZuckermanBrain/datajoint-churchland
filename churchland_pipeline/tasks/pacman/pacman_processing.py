@@ -9,12 +9,14 @@ class AlignmentState(dj.Lookup):
     definition = """
     # Task state IDs used to align trials
     -> pacman_acquisition.TaskState
-    ---
     """
-    
-    contents = [
-        [5]
-    ]
+
+@schema
+class SpikeFilter(dj.Lookup):
+    definition = """
+    # Set of filter parameters for smoothing spike trains
+    -> processing.Filter
+    """
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 2
@@ -29,7 +31,7 @@ class MotorUnitPsth(dj.Computed):
     -> pacman_acquisition.SessionBlock
     ---
     motor_unit_psth : longblob # psth
-    -> processing.Filter
+    -> SpikeFilter
     """
 
 @schema
@@ -41,7 +43,7 @@ class NeuronPsth(dj.Computed):
     -> pacman_acquisition.SessionBlock
     ---
     neuron_psth : longblob # psth
-    -> processing.Filter
+    -> SpikeFilter
     """
 
 @schema
@@ -124,7 +126,7 @@ class MotorUnitRate(dj.Computed):
     -> MotorUnitSpikes
     ---
     motor_unit_rate : longblob # trial-aligned firing rate [Hz]
-    -> processing.Filter
+    -> SpikeFilter
     """
     
 @schema
@@ -134,7 +136,7 @@ class NeuronRate(dj.Computed):
     -> NeuronSpikes
     ---
     neuron_rate : longblob # trial-aligned firing rate [Hz]
-    -> processing.Filter
+    -> SpikeFilter
     """
 
 # -------------------------------------------------------------------------------------------------------------------------------

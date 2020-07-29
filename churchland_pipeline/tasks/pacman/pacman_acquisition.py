@@ -2,8 +2,6 @@ import datajoint as dj
 from ... import lab, acquisition, equipment, reference
 from ...rigs.Jumanji import speedgoat
 import os, re
-import numpy as np
-from collections import ChainMap
 
 schema = dj.schema('churchland_shared_pacman_acquisition')
 
@@ -30,14 +28,20 @@ class ArmPosture(dj.Lookup):
 
 @schema
 class ConditionParams(dj.Lookup):
+    """
+    Task condition parameters. Each condition consists of a unique combination of force, 
+    stimulation, and general target trajectory parameters. For conditions when stimulation
+    was not delivered, stimulation parameters are left empty. Each condition also includes
+    a set of parameters unique to the particular type of target trajectory.
+    """
+
     definition = """
-    # Task condition parameters
     condition_id: smallint unsigned
     """
 
     class Force(dj.Part):
         definition = """
-        # Force parameters for Pac-Man task
+        # Force parameters
         -> master
         force_id: smallint unsigned # ID number
         ---
@@ -48,7 +52,7 @@ class ConditionParams(dj.Lookup):
         
     class Stim(dj.Part):
         definition = """
-        # Cerestim parameters
+        # CereStim parameters
         -> master
         stim_id: smallint unsigned # ID number
         ---
@@ -64,7 +68,7 @@ class ConditionParams(dj.Lookup):
 
     class Target(dj.Part):
         definition = """
-        # Target force profiles for Pac-Man task
+        # Target force profile parameters
         -> master
         target_id: smallint unsigned # ID number
         ---
@@ -75,23 +79,22 @@ class ConditionParams(dj.Lookup):
         
     class Static(dj.Part):
         definition = """
-        # Static force profile (type code: STA)
-        -> ConditionParams.Target
-        ---
+        # Static force profile parameters
+        -> master.Target
         """
         
     class Ramp(dj.Part):
         definition = """
-        # Linear ramp force profile (type code: RMP)
-        -> ConditionParams.Target
+        # Linear ramp force profile parameters
+        -> master.Target
         ---
         target_amplitude: decimal(5,4) # target amplitude [proportion playable window]
         """
         
     class Sine(dj.Part):
         definition = """
-        # Sinusoidal (single-frequency) force profile (type code: SIN)
-        -> ConditionParams.Target
+        # Sinusoidal (single-frequency) force profile parameters
+        -> master.Target
         ---
         target_amplitude: decimal(5,4) # target amplitude [proportion playable window]
         target_frequency: decimal(5,4) # sinusoid frequency [Hz]
@@ -99,8 +102,8 @@ class ConditionParams(dj.Lookup):
         
     class Chirp(dj.Part):
         definition = """
-        # Chirp force profile (type code: CHP)
-        -> ConditionParams.Target
+        # Chirp force profile parameters
+        -> master.Target
         ---
         target_amplitude: decimal(5,4) # target amplitude [proportion playable window]
         target_frequency_init: decimal(5,4) # initial frequency [Hz]
@@ -108,79 +111,86 @@ class ConditionParams(dj.Lookup):
         """
         
     @classmethod
-    def params2keys(self, params):
+    def parseparams(self, params):
         """
-        Converts a parameters dictionary into a set of condition keys and a derived
-        condition table.
-
-        Args:
-            params (dict): trial parameters saved by Speedgoat
+        Parses a dictionary constructed from a set of Speedgoat parameters (written
+        on each trial) in order to extract the set of attributes associated with each
+        part table of ConditionParams
         """
 
-        # force key
-        force_key = {
-            'force_max': params['frcMax'], 
-            'force_offset': params['frcOff'],
-            'force_inverted': params['frcPol']==-1
-            }
+        # force attributes
+        force_attr = dict(
+            force_max = params['frcMax'], 
+            force_offset = params['frcOff'],
+            force_inverted = params['frcPol']==-1
+        )
 
         cond_rel = ConditionParams.Force
 
-        # stim key
-        if 'stim' in params.keys() and params['stim']==1:
+        # stimulation attributes
+        if params.get('stim')==1:
                 
             prog = re.compile('stim([A-Z]\w*)')
-            stim_key = dict(ChainMap(*[
-                {'stim_' + prog.search(k).group(1).lower(): v} 
+            stim_attr = {
+                'stim_' + prog.search(k).group(1).lower(): v
                 for k,v in zip(params.keys(), params.values()) 
                 if prog.search(k) is not None and k != 'stimDelay'
-                ]))
+                }
 
             cond_rel = cond_rel * ConditionParams.Stim
             
         else:
-            stim_key = dict()
+            stim_attr = dict()
             cond_rel = cond_rel - ConditionParams.Stim
 
-        # target key
-        targ_key = {
-            'target_duration': params['duration'],
-            'target_offset': params['offset'][0],
-            'target_pad': params['padDur']
-        }
+        # target attributes
+        targ_attr = dict(
+            target_duration = params['duration'],
+            target_offset = params['offset'][0],
+            target_pad = params['padDur']
+        )
 
+        # target type attributes
         if params['type'] == 'STA':
 
-            targ_rel = ConditionParams.Static
-            targ_type_key = dict()
+            targ_type_rel = ConditionParams.Static
+            targ_type_attr = dict()
 
         elif params['type'] == 'RMP':
 
-            targ_rel = ConditionParams.Ramp
-            targ_type_key = {'target_amplitude': params['amplitude'][0]}
+            targ_type_rel = ConditionParams.Ramp
+            targ_type_attr = dict(
+                target_amplitude = params['amplitude'][0]
+            )
 
         elif params['type'] == 'SIN':
 
-            targ_rel = ConditionParams.Sine
-            targ_type_key = {
-                'target_amplitude': params['amplitude'][0],
-                'target_frequency': params['frequency'][0]
-            }
+            targ_type_rel = ConditionParams.Sine
+            targ_type_attr = dict(
+                target_amplitude = params['amplitude'][0],
+                target_frequency = params['frequency'][0]
+            )
 
         elif params['type'] == 'CHP':
 
-            targ_rel = ConditionParams.Chirp
-            targ_type_key = {
-                'target_amplitude': params['amplitude'][0],
-                'target_frequency_init': params['frequency'][0],
-                'target_frequency_final': params['frequency'][1]
-            }
+            targ_type_rel = ConditionParams.Chirp
+            targ_type_attr = dict(
+                target_amplitude = params['amplitude'][0],
+                target_frequency_init = params['frequency'][0],
+                target_frequency_final = params['frequency'][1]
+            )
 
-        cond_rel = cond_rel * ConditionParams.Target * targ_rel
+        cond_rel = cond_rel * ConditionParams.Target * targ_type_rel
 
-        return force_key, stim_key, targ_key, targ_type_key, cond_rel, targ_rel
+        # aggregate all parameter attributes into a dictionary
+        cond_attr = dict(
+            Force = force_attr,
+            Stim = stim_attr,
+            Target = targ_attr,
+            TargetType = targ_type_attr
+        )
 
-
+        return cond_attr, cond_rel, targ_type_rel
     
 @schema
 class TaskState(dj.Lookup):
@@ -234,28 +244,27 @@ class Behavior(dj.Imported):
         Behavior.insert1(key)
 
         # local path to behavioral summary file and sample rate
-        beh_sum_path, fs = (acquisition.BehaviorRecording & key).fetch1('behavior_summary_file_path', 'behavior_sample_rate')
-        beh_sum_path = (reference.EngramPath & {'engram_tier': 'locker'}).ensurelocal(beh_sum_path)
+        behavior_summary_path, fs = (acquisition.BehaviorRecording & key).fetch1('behavior_summary_file_path', 'behavior_sample_rate')
+        behavior_summary_path = (reference.EngramPath & {'engram_tier': 'locker'}).ensurelocal(behavior_summary_path)
 
         # path to all behavior files
-        beh_path = os.path.sep.join(beh_sum_path.split(os.path.sep)[:-1] + [''])
+        behavior_path = os.path.sep.join(behavior_summary_path.split(os.path.sep)[:-1] + [''])
 
         # identify task controller
-        sess_equip = (acquisition.Session.Equipment & key) * equipment.Equipment
-        task_controller_hardware = (sess_equip & {'equipment_type': 'task controller hardware'}).fetch1('equipment_name')
+        task_controller_hardware = (acquisition.Task & acquisition.Session & key).fetch1('task_controller_hardware')
 
         if task_controller_hardware == 'Speedgoat':
 
             # load summary file
-            summary = speedgoat.readtaskstates(beh_sum_path)
+            summary = speedgoat.readtaskstates(behavior_summary_path)
 
             # update task states
             TaskState.insert(summary, skip_duplicates=True)
 
             # parameter and data files
-            beh_files = os.listdir(beh_path)
-            param_files = list(filter(lambda f: f.endswith('.params'), beh_files))
-            data_files = list(filter(lambda f: f.endswith('.data'), beh_files))
+            behavior_files = os.listdir(behavior_path)
+            param_files = [f for f in behavior_files if f.endswith('.params')]
+            data_files = [f for f in behavior_files if f.endswith('.data')]
 
             # populate conditions from parameter files
             for f_param in param_files:
@@ -264,55 +273,62 @@ class Behavior(dj.Imported):
                 trial = re.search(r'beh_(\d*)',f_param).group(1)
 
                 # ensure matching data file exists
-                if f_param.replace('params','data') in data_files:
-                    
-                    # read params file
-                    params = speedgoat.readtrialparams(beh_path + f_param)
+                if f_param.replace('params','data') not in data_files:
 
-                    # convert params to condition keys
-                    force_key, stim_key, targ_key, targ_type_key, cond_rel, targ_rel = ConditionParams.params2keys(params)
+                    print('Missing data file for trial {}'.format(trial))
+
+                else:
+                    # read params file
+                    params = speedgoat.readtrialparams(behavior_path + f_param)
+
+                    # extract condition attributes from params file
+                    cond_attr, cond_rel, targ_type_rel = ConditionParams.parseparams(params)
+
+                    # aggregate condition part table parameters into a single dictionary
+                    all_cond_attr = {k: v for d in list(cond_attr.values()) for k, v in d.items()}
                     
                     # insert new condition if none exists
-                    if not(cond_rel & force_key & stim_key & targ_key & targ_type_key):
+                    if not(cond_rel & all_cond_attr):
 
                         # insert condition table
                         if not(ConditionParams()):
                             new_cond_id = 0
                         else:
-                            cond_id = ConditionParams.fetch('condition_id')
-                            new_cond_id = np.setdiff1d(np.arange(cond_id.max()+2), cond_id)[0]
+                            all_cond_id = ConditionParams.fetch('condition_id')
+                            new_cond_id = next(i for i in range(2+max(all_cond_id)) if i not in all_cond_id)
 
                         cond_key = {'condition_id': new_cond_id}
                         ConditionParams.insert1(cond_key)
 
-                        # insert first-layer condition part tables
-                        for (p,k) in zip(['Force', 'Stim', 'Target'], [force_key, stim_key, targ_key]):
+                        # insert Force, Stim, and Target tables
+                        for cond_part_name in ['Force', 'Stim', 'Target']:
 
-                            if not(k):
+                            # attributes for part table
+                            cond_part_attr = cond_attr[cond_part_name]
+
+                            if not(cond_part_attr):
                                 continue
 
-                            part = getattr(ConditionParams, p)
-                            k_id = p.lower() + '_id'
+                            cond_part_rel = getattr(ConditionParams, cond_part_name)
+                            cond_part_id = cond_part_name.lower() + '_id'
 
-                            if not(part & k):
+                            if not(cond_part_rel & cond_part_attr):
 
-                                if not(part()):
-                                    new_id = 0
+                                if not(cond_part_rel()):
+                                    new_cond_part_id = 0
                                 else:
-                                    id = part.fetch(k_id)
-                                    new_id = np.setdiff1d(np.arange(id.max()+2), id)[0]
+                                    all_cond_part_id = cond_part_rel.fetch(cond_part_id)
+                                    new_cond_part_id = next(i for i in range(2+max(all_cond_part_id)) if i not in all_cond_part_id)
 
-                                k[k_id] = new_id
+                                cond_part_attr[cond_part_id] = new_cond_part_id
                             else:
-                                k[k_id] = np.unique((part & k).fetch(k_id))[0]
+                                cond_part_attr[cond_part_id] = (cond_part_rel & cond_part_attr).fetch(cond_part_id, limit=1)[0]
 
-                            part.insert1(dict(ChainMap(cond_key, k)))
+                            cond_part_rel.insert1(dict(**cond_key, **cond_part_attr))
 
-                        # insert second-layer condition target type part table
-                        targ_rel.insert1(dict(ChainMap(cond_key, {'target_id': targ_key['target_id']}, targ_type_key)))
-
-                else:
-                    print('Missing data file for trial {}'.format(trial))
+                        # insert target type table
+                        targ_type_rel.insert1(dict(**cond_key, **cond_attr['TargetType'], target_id=cond_attr['Target']['target_id']))
+                    
 
             # populate trials from data files
             success_state = (TaskState() & 'task_state_name="Success"').fetch1('task_state_id')
@@ -329,19 +345,22 @@ class Behavior(dj.Imported):
                     print('Missing parameters file for trial {}'.format(trial))
                 else:
                     # convert params to condition keys
-                    params = speedgoat.readtrialparams(beh_path + param_file)
-                    force_key, stim_key, targ_key, targ_type_key, cond_rel, targ_rel = ConditionParams.params2keys(params)
+                    params = speedgoat.readtrialparams(behavior_path + param_file)
+                    cond_attr, cond_rel, targ_type_rel = ConditionParams.parseparams(params)
 
                     # read data
-                    data = speedgoat.readtrialdata(beh_path + f_data, success_state, fs)
+                    data = speedgoat.readtrialdata(behavior_path + f_data, success_state, fs)
+
+                    # aggregate condition part table parameters into a single dictionary
+                    all_cond_attr = {k: v for d in list(cond_attr.values()) for k, v in d.items()}
 
                     # insert condition data
-                    cond_id = (cond_rel & force_key & stim_key & targ_key & targ_type_key).fetch1('condition_id')
-                    cond_key = dict(ChainMap(key, {'condition_id': cond_id}))
+                    cond_id = (cond_rel & all_cond_attr).fetch1('condition_id')
+                    cond_key = dict(**key, condition_id=cond_id)
                     Behavior.Condition.insert1(cond_key, skip_duplicates=True)
 
                     # insert trial data
-                    trial_key = dict(ChainMap(cond_key, {'trial_number': trial}, {'save_tag': params['saveTag']}, data))
+                    trial_key = dict(**cond_key, **data, trial_number=trial, save_tag=params['saveTag'])
                     Behavior.Trial.insert1(trial_key)
 
 

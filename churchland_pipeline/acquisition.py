@@ -6,41 +6,28 @@ from . import lab, equipment, reference
 from brpylib import NsxFile, brpylib_ver
 from collections import ChainMap
 
-schema = dj.schema('churchland_common_acquisition')
+schema = dj.schema('churchland_common_acquisition') # dj.schema(dj.config['database.prefix'] + 'churchland_common_acquisition')
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 0
 # -------------------------------------------------------------------------------------------------------------------------------
 
 @schema
-class SaveTagType(dj.Lookup):
-    definition = """
-    # Save tag types
-    save_tag_type : varchar(32) # unique save tag type
-    ---
-    save_tag_description : varchar(255)
-    """
-
-    contents = [
-        ['setup', 'getting setup'],
-        ['good',  'clear for analysis'],
-        ['bad behavior', 'inconsistent behavior unsuitable for analyses'],
-        ['unstable neurons', 'neural drift']
-    ]
-
-@schema
 class Task(dj.Lookup):
     definition = """
     # Experimental tasks
-    task : varchar(32) # unique task name
+    task: varchar(32) # unique task name
     ---
-    task_description : varchar(255) # additional task details
+    -> equipment.Hardware.proj(task_controller_hardware = 'hardware')
+    -> equipment.Software.proj(task_controller_software = 'software', task_controller_software_version = 'software_version')
+    -> equipment.Software.proj(graphics = 'software', graphics_version = 'software_version')
+    task_description: varchar(255) # additional task details
     """
     
     contents = [
-        ['pacman', ''],
-        ['pedaling', ''],
-        ['reaching', '']
+        ['pacman',     'Speedgoat', 'Simulink', '', 'Psychtoolbox', '3.0', ''],
+        ['two target', 'Speedgoat', 'Simulink', '', 'Unity 3D',     '',    ''],
+        ['reaching',   'Speedgoat', 'Simulink', '', 'Psychtoolbox', '3.0', ''],
     ]
 
 # -------------------------------------------------------------------------------------------------------------------------------
@@ -58,11 +45,11 @@ class Session(dj.Manual):
     -> Task
     """
 
-    class Equipment(dj.Part):
+    class Hardware(dj.Part):
         definition = """
-        # Equipment used for the recording session
+        # Hardware used for the recording session
         -> master
-        -> equipment.Equipment
+        -> equipment.Hardware
         """
 
     class User(dj.Part):
@@ -76,7 +63,7 @@ class Session(dj.Manual):
         definition = """
         # Session note
         -> master
-        session_notes_id : tinyint unsigned # note ID
+        session_notes_id: tinyint unsigned # note ID
         ---
         session_notes: varchar(4095) # note text
         """
@@ -88,14 +75,12 @@ class Session(dj.Manual):
             
             print((self & {'session_date': session, 'session_notes_id': notesId}).fetch1('session_notes'))
             
-            
     class SaveTag(dj.Part):
         definition = """
         # Save tags and associated notes
         -> master
         save_tag: tinyint unsigned # save tag
         ---
-        -> SaveTagType
         save_tag_notes: varchar(4095) # notes for the save tag
         """
         
@@ -123,23 +108,26 @@ class Session(dj.Manual):
         rig, 
         task, 
         dates=[],
-        neural_signal_processor='Cerebus',
-        task_controller_hardware='Speedgoat', 
-        task_controller_software='Simulink'):
+        neural_signal_processor='Cerebus'):
 
-        # session dates
+        # fetch task controller
+        task_controller_hardware = (Task & {'task': task}).fetch1('task_controller_hardware')
+
+        # find all directories in raw path
         raw_path = self.getrawpath(monkey, rig, task)
-        sess_dates = sorted(list(os.listdir(raw_path)))
+        raw_dir = sorted(list(os.listdir(raw_path)))
 
         if len(dates) > 0:
-            dates = list(filter(lambda x: x in dates, sess_dates))
+            # restrict dates based on input list
+            session_dates = [d for d in raw_dir if d in dates]
         else:
-            dates = list(filter(lambda x: re.search(r'\d{4}-\d{2}-\d{2}',x), sess_dates))
+            # get all dates from directory list
+            session_dates = [d for d in raw_dir if re.search(r'\d{4}-\d{2}-\d{2}',d) is not None]
 
-        for date in dates:
+        for date in session_dates:
 
-            sess_path = raw_path + date + '/'
-            sess_files = os.listdir(sess_path)
+            session_path = raw_path + date + '/'
+            session_files = os.listdir(session_path)
 
             # ensure session data not already in database
             if not self & {'session_date': date}:
@@ -149,7 +137,7 @@ class Session(dj.Manual):
                     if task_controller_hardware == 'Speedgoat':
                         behavior_dir = 'speedgoat'
 
-                    next(filter(lambda x: x==behavior_dir, sess_files))
+                    next(filter(lambda x: x==behavior_dir, session_files))
                 except StopIteration:
                     print('Missing behavior files for session {}'.format(date))
                 else:         
@@ -159,29 +147,28 @@ class Session(dj.Manual):
                         if neural_signal_processor == 'Cerebus': # will add IMEC for new probes
                             ephys_dir = 'blackrock'
 
-                        next(filter(lambda x: x==ephys_dir, sess_files))
+                        next(filter(lambda x: x==ephys_dir, session_files))
                     except StopIteration:
                         print('Missing ephys files for session {}'.format(date))
                     else:
-
                         # insert session
                         self.insert1((date, monkey, rig, task))
 
                         # insert notes
                         try:
-                            notes_files = next(x for x in sess_files if re.search('.*notes\.txt',x))
+                            notes_files = next(x for x in session_files if re.search('.*notes\.txt',x))
                         except StopIteration:
                             print('Missing notes for session {}'.format(date))
                         else:
-                            with open(sess_path + notes_files,'r') as f:
+                            with open(session_path + notes_files,'r') as f:
                                 self.Notes.insert1((date, monkey, 0, f.read()))
 
-                        # insert common equipment
-                        common_equipment = [neural_signal_processor, task_controller_hardware, task_controller_software]
-                        equip_name = list(map(lambda equip: {'equipment_name': equip}, common_equipment))
-                        equip_keys = [(equipment.Equipment & attr).fetch1('KEY') for attr in equip_name]
-                        equip_keys = [dict(ChainMap({'session_date': date, 'monkey': monkey}, d)) for d in equip_keys]
-                        self.Equipment.insert(equip_keys)
+                        # insert neural signal processor
+                        self.Hardware.insert1(dict(
+                            session_date=date,
+                            monkey=monkey,
+                            **(equipment.Hardware & {'hardware': neural_signal_processor}).fetch1('KEY')
+                            ))
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 2
@@ -192,11 +179,11 @@ class EphysRecording(dj.Imported):
     definition = """
     # Electrophysiological recording
     -> Session
-    ephys_file_id : tinyint unsigned # file ID
+    ephys_file_id: tinyint unsigned # file ID
     ---
     ephys_file_path: varchar(1012) # file path (temporary until issues with filepath attribute are resolved)
-    ephys_sample_rate : smallint unsigned # sampling rate for ephys data  [Hz]
-    ephys_duration : double # recording duration [sec]
+    ephys_sample_rate: smallint unsigned # sampling rate for ephys data  [Hz]
+    ephys_duration: double # recording duration [sec]
     """
 
     class BlackrockParams(dj.Part):
@@ -204,40 +191,39 @@ class EphysRecording(dj.Imported):
         # Ephys params unique to Blackrock system
         -> master
         ---
-        blackrock_timestamp : double # number of samples between pressing "record" and the clock start
+        blackrock_timestamp: double # number of samples between pressing "record" and the clock start
         """
 
     class Channel(dj.Part):
         definition = """
         # Ephys channel header
         -> master
-        channel_index : smallint unsigned # channel index in data array
+        channel_index: smallint unsigned # channel index in data array
         ---
-        channel_id = null : smallint unsigned # channel ID used by Blackrock system
-        channel_label : enum('neural', 'emg', 'sync', 'stim')
+        channel_id = null: smallint unsigned # channel ID used by Blackrock system
+        channel_label: enum('neural', 'emg', 'sync', 'stim')
         """
     
     def make(self, key):
         
-        # fetch session key
-        sess_key = (Session & key).fetch1()
+        session_key = (Session & key).fetch1()
 
-        # raw data path
-        raw_path = Session.getrawpath(sess_key['monkey'],sess_key['rig'],sess_key['task']) + str(sess_key['session_date'])
+        # path to raw data
+        raw_path = Session.getrawpath(session_key['monkey'],session_key['rig'],session_key['task']) + str(session_key['session_date'])
 
-        # identify task controller
-        sess_equip = (Session.Equipment & sess_key) * equipment.Equipment
-        neural_signal_processor = (sess_equip & {'equipment_type': 'neural signal processor'}).fetch1('equipment_name')
+        # fetch neural signal processor
+        session_hardware = (Session.Hardware & session_key) * equipment.Hardware
+        neural_signal_processor = (session_hardware & {'hardware_category': 'neural signal processor'}).fetch1('hardware')
 
         if neural_signal_processor == 'Cerebus':
 
             # path to blackrock files
-            eph_path = raw_path + '/blackrock/'
-            eph_files = list(os.listdir(eph_path))
+            blackrock_path = raw_path + '/blackrock/'
+            blackrock_files = list(os.listdir(blackrock_path))
 
             # path to NSx files
-            nsx_files = list(filter(lambda x: re.search(r'.*(emg|neu|neu_emg)_00\d\.ns\d',x), eph_files))
-            nsx_path = [eph_path + f for f in nsx_files]
+            nsx_files = [f for f in blackrock_files if re.search(r'.*(emg|neu|neu_emg)_00\d\.ns\d',f) is not None]
+            nsx_path = [blackrock_path + f for f in nsx_files]
 
             for i, pth in enumerate(nsx_path):
 
@@ -254,7 +240,7 @@ class EphysRecording(dj.Imported):
                 key['ephys_sample_rate'] = int(nsx_data['samp_per_s'])
                 key['ephys_duration'] = nsx_data['data_time_s']
 
-                # ensure global file path before inserting
+                # ensure file path is "global" (i.e., relative to U19 server)
                 key['ephys_file_path'] = (reference.EngramPath & {'engram_tier':'locker'}).ensureglobal(pth)
 
                 # insert self
@@ -293,33 +279,31 @@ class BehaviorRecording(dj.Imported):
     # Behavior recording, imported from Speedgoat files
     -> Session
     ---
-    behavior_summary_file_path : varchar(1012) # path to summary file (temporary)
-    behavior_sample_rate = 1e3 : smallint unsigned # sampling rate for behavioral data [Hz]
+    behavior_summary_file_path: varchar(1012) # path to summary file (temporary)
+    behavior_sample_rate = 1e3: smallint unsigned # sampling rate for behavioral data [Hz]
     """
     
     def make(self, key):
         
-        # session key
-        sess_key = (Session & key).fetch1()
+        session_key = (Session & key).fetch1()
         
-        # path to behavioral files
-        raw_path = Session.getrawpath(sess_key['monkey'],sess_key['rig'],sess_key['task']) + str(key['session_date'])
+        # path to raw data
+        raw_path = Session.getrawpath(session_key['monkey'],session_key['rig'],session_key['task']) + str(key['session_date'])
         
         # identify task controller
-        sess_equip = (Session.Equipment & sess_key) * equipment.Equipment
-        task_controller_hardware = (sess_equip & {'equipment_type': 'task controller hardware'}).fetch1('equipment_name')
+        task_controller_hardware = (Task & Session & session_key).fetch1('task_controller_hardware')
 
         if task_controller_hardware == 'Speedgoat':
 
             # path to speedgoat files
-            beh_path = raw_path + '/speedgoat/'
-            beh_files = list(os.listdir(beh_path))
+            speedgoat_path = raw_path + '/speedgoat/'
+            speedgoat_files = list(os.listdir(speedgoat_path))
 
-            # get speedgoat summary file
-            summary_file = next(filter(lambda x: re.search('.*\.summary',x), beh_files))
+            # speedgoat summary file
+            summary_file = next(filter(lambda f: re.search('.*\.summary',f), speedgoat_files))
 
-            # ensure global file path
-            key['behavior_summary_file_path'] = (reference.EngramPath & {'engram_tier':'locker'}).ensureglobal(beh_path + summary_file)
+            # ensure file path is "global" (i.e., relative to U19 server)
+            key['behavior_summary_file_path'] = (reference.EngramPath & {'engram_tier':'locker'}).ensureglobal(speedgoat_path + summary_file)
 
         # behavior sample rate
         key['behavior_sample_rate'] = int(1e3)
@@ -336,8 +320,9 @@ class EmgChannelGroup(dj.Manual):
     definition = """
     -> EphysRecording
     -> reference.Muscle
+    -> equipment.Probe
     ---
-    emg_channel_notes : varchar(4095) # notes for the channel set
+    emg_channel_notes: varchar(4095) # notes for the channel set
     """
 
     class Channel(dj.Part):
@@ -345,9 +330,9 @@ class EmgChannelGroup(dj.Manual):
         # EMG channel number in group
         -> master
         -> EphysRecording.Channel
-        emg_channel : smallint unsigned # EMG channel index in group
         ---
-        emg_channel_quality : enum('sortable', 'hash', 'dead') # EMG channel quality
+        emg_channel: smallint unsigned # EMG channel index in group
+        emg_channel_quality: enum('sortable', 'hash', 'dead') # EMG channel quality
         """
 
 
@@ -356,10 +341,10 @@ class NeuralChannelGroup(dj.Manual):
     definition = """
     -> EphysRecording
     -> reference.BrainRegion
-    neural_electrode_id: tinyint unsigned # recording electrode number
+    -> equipment.Probe
     ---
-    hemisphere : enum('left', 'right') # which hemisphere are we recording from
-    neural_channel_notes : varchar(4095) # notes for the channel set
+    hemisphere: enum('left', 'right')   # brain hemisphere
+    neural_channel_notes: varchar(4095) # notes for the channel set
     """
 
     class Channel(dj.Part):
@@ -367,7 +352,8 @@ class NeuralChannelGroup(dj.Manual):
         # Channel number in group
         -> master
         -> EphysRecording.Channel
-        neural_channel : smallint unsigned # neural channel index in group
+        ---
+        neural_channel: smallint unsigned # neural channel index in group
         """
 
     class ProbeDepth(dj.Part):
@@ -376,5 +362,5 @@ class NeuralChannelGroup(dj.Manual):
         -> master
         -> Session.SaveTag
         ---
-        probe_depth : decimal(5,3) # depth of recording electrode [mm]
+        probe_depth: decimal(5,3) # depth of recording electrode [mm]
         """

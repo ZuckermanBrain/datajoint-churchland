@@ -2,8 +2,14 @@ import datajoint as dj
 from ... import action, acquisition, equipment, lab, processing, reference
 from ...tasks.pacman import pacman_acquisition, pacman_processing
 import os, re, inspect
-from collections import ChainMap
 from datetime import datetime
+
+# create virtual module (creates a schema with originally defined tables)
+# first argument: package name, not relevant
+# second argument: schema name, most important
+# lab = dj.create_virtual_module('shan_costa_lab', 'shan_costa_lab') 
+# lab.__name__
+# lab.schema.drop()
 
 def schema_drop_order():
     return [
@@ -45,13 +51,15 @@ def fill_sessions():
     Fill remaining session data
     """
 
-    for sess_key in acquisition.Session.fetch('KEY'):
+    for session_key in acquisition.Session.fetch('KEY'):
 
         # add users
-        acquisition.Session.User.insert1((sess_key['session_date'], sess_key['monkey'], 'njm2149'), skip_duplicates=True)
-        if sess_key['session_date'] >= datetime.strptime('2019-11-01','%Y-%m-%d').date():
-            acquisition.Session.User.insert1((sess_key['session_date'], sess_key['monkey'], 'emt2177'), skip_duplicates=True)
+        acquisition.Session.User.insert1(dict(user='njm2149', **session_key), skip_duplicates=True)
+        if session_key['session_date'] >= datetime.strptime('2019-11-01','%Y-%m-%d').date():
+            acquisition.Session.User.insert1(dict(user='emt2177', **session_key), skip_duplicates=True)
 
         # add load cell
-        equip_key = (equipment.Equipment & 'equipment_type="load cell"').fetch1('KEY')
-        acquisition.Session.Equipment.insert1(dict(ChainMap(sess_key, equip_key)), skip_duplicates=True)
+        acquisition.Session.Hardware.insert1(dict(
+            **session_key,
+            **(equipment.Hardware & {'hardware': '5lb Load Cell'}).fetch1('KEY')
+            ))

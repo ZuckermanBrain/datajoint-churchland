@@ -17,7 +17,7 @@ class BurrHole(dj.Manual):
 
     class User(dj.Part):
         definition = """
-        # Burr hole personnel
+        # Personnel
         -> master
         -> lab.User
         """
@@ -50,16 +50,15 @@ class Surgery(dj.Manual):
     surgery_notes : varchar(4095)
     """
 
-    class Equipment(dj.Part):
+    class Hardware(dj.Part):
         definition = """
-        # Equipment used for surgery
         -> master
-        -> equipment.Equipment
+        -> equipment.Hardware
         """
 
     class User(dj.Part):
         definition = """
-        # Burr hole personnel
+        # Personnel
         -> master
         -> lab.User
         """

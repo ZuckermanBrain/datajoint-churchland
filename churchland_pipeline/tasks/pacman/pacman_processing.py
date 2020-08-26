@@ -1,6 +1,7 @@
 import datajoint as dj
 from ... import lab, acquisition, processing
 from . import pacman_acquisition
+from ...rigs.Jumanji import datasync
 
 schema = dj.schema('churchland_shared_pacman_processing')
 
@@ -30,7 +31,7 @@ class MotorUnitPsth(dj.Computed):
     -> pacman_acquisition.Behavior.Condition
     -> pacman_acquisition.SessionBlock
     ---
-    motor_unit_psth : longblob # psth
+    motor_unit_psth: longblob # psth
     -> SpikeFilter
     """
 
@@ -42,7 +43,7 @@ class NeuronPsth(dj.Computed):
     -> pacman_acquisition.Behavior.Condition
     -> pacman_acquisition.SessionBlock
     ---
-    neuron_psth : longblob # psth
+    neuron_psth: longblob # psth
     -> SpikeFilter
     """
 
@@ -54,10 +55,25 @@ class TrialAlignment(dj.Imported):
     -> pacman_acquisition.Behavior.Trial
     ---
     -> acquisition.EphysRecording.Channel
-    alignment_index : int unsigned # alignment index (in Speedgoat time base)
-    speedgoat_alignment : longblob # alignment indices for Speedgoat data
-    ephys_alignment : longblob # alignment indices for Ephys data
+    alignment_index = null: int unsigned # alignment index (in Speedgoat time base)
+    behavior_alignment = null: longblob # alignment indices for Speedgoat data
+    ephys_alignment = null: longblob # alignment indices for Ephys data
     """
+
+    def make(self, key):
+
+        # fetch trial numbers and simulation times
+        trial_num, trial_time, successful_trial = (pacman_acquisition.Behavior.Trial & key).fetch('trial_number', 'simulation_time', 'successful_trial')
+
+        # fetch sync signal
+        nsx_path = (acquisition.EphysRecording & key).fetch1('ephys_file_path')
+        sync_channel_id = (acquisition.EphysRecording.Channel & key & {'channel_label': 'sync'}).fetch1('channel_id')
+        nsx_file = NsxFile(nsx_path)
+        sync_channel = nsx_file.getdata(sync_channel_id)
+        nsx_file.close()
+
+        # parse sync signal
+        datasync.parsesync(sync_channel, trial_time, successful_trial)
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 3
@@ -68,9 +84,9 @@ class Emg(dj.Imported):
     # raw, trialized, and aligned EMG data
     -> acquisition.EmgChannelGroup
     -> TrialAlignment
-    emg_channel : tinyint unsigned # channel number (indexed relative to EMG channel group)
+    emg_channel: tinyint unsigned # channel number (indexed relative to EMG channel group)
     ---
-    emg_voltage_signal : longblob # channel data
+    emg_voltage_signal: longblob # channel data
     """
 
 @schema
@@ -79,8 +95,8 @@ class Force(dj.Computed):
     # Single trial force
     -> TrialAlignment
     ---
-    force_raw = null : longblob # aligned raw (online) force [Volts]
-    force_filt = null : longblob # offline filtered, aligned, and calibrated force [Newtons]
+    force_raw = null: longblob # aligned raw (online) force [Volts]
+    force_filt = null: longblob # offline filtered, aligned, and calibrated force [Newtons]
     """
 
 @schema
@@ -90,7 +106,7 @@ class MotorUnitSpikes(dj.Computed):
     -> processing.MotorUnit
     -> TrialAlignment
     ---
-    motor_unit_spikes : longblob # trial-aligned spike raster (logical)
+    motor_unit_spikes: longblob # trial-aligned spike raster (logical)
     """
 
 @schema
@@ -100,7 +116,7 @@ class NeuronSpikes(dj.Computed):
     -> processing.Neuron
     -> TrialAlignment
     ---
-    neuron_spikes : longblob # trial-aligned spike raster (logical)
+    neuron_spikes: longblob # trial-aligned spike raster (logical)
     """
 
 # -------------------------------------------------------------------------------------------------------------------------------
@@ -113,10 +129,10 @@ class BehaviorQuality(dj.Computed):
     # Behavior quality metrics
     -> Force
     ---
-    max_err_target : decimal(6,4) # maximum (over time) absolute error, normalized by the range of the target force
-    max_err_mean : decimal(6,4) # maximum (over time) absolute z-scored error
-    mah_dist_target : decimal(6,4) # Mahalanobis distance relative to the target force
-    mah_dist_mean : decimal(6,4) # Mahalanobis distance relative to the trial average
+    max_err_target: decimal(6,4) # maximum (over time) absolute error, normalized by the range of the target force
+    max_err_mean: decimal(6,4) # maximum (over time) absolute z-scored error
+    mah_dist_target: decimal(6,4) # Mahalanobis distance relative to the target force
+    mah_dist_mean: decimal(6,4) # Mahalanobis distance relative to the trial average
     """
 
 @schema
@@ -125,7 +141,7 @@ class MotorUnitRate(dj.Computed):
     # Aligned motor unit trial firing rate
     -> MotorUnitSpikes
     ---
-    motor_unit_rate : longblob # trial-aligned firing rate [Hz]
+    motor_unit_rate: longblob # trial-aligned firing rate [Hz]
     -> SpikeFilter
     """
     
@@ -135,7 +151,7 @@ class NeuronRate(dj.Computed):
     # Aligned neuron trial firing rate
     -> NeuronSpikes
     ---
-    neuron_rate : longblob # trial-aligned firing rate [Hz]
+    neuron_rate: longblob # trial-aligned firing rate [Hz]
     -> SpikeFilter
     """
 

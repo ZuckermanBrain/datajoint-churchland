@@ -1,0 +1,11 @@
+version: '3'
+services:
+    datajoint-njm2149:
+        build:
+            context: ..
+            dockerfile: ./datajoint-njm2149/Dockerfile-computational
+        env_file: ./datajoint-churchland/.env
+        volumes:
+            - ./datajoint-njm2149/njm2149_computational_pipeline:/datajoint-njm2149/njm2149_computational_pipeline
+        ports:
+            - "8894:8888"

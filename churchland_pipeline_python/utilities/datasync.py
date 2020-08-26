@@ -1,22 +1,20 @@
 """
-This package defines modules for synchronizing behavioral and neural data
+This package defines modules for synchronizing data across acquisition systems
 """
 
-import re
 import numpy as np
 import warnings
 from itertools import compress
 
 
-def parsesync(sync_channel, trial_time, successful_trial, max_sample_err=2, max_time_step=0.2):
-
-    # //TODO handle time stamps
+def parsesync(sync_channel, trial_time, max_sample_err=2, max_time_step=0.2):
 
     # number of data samples
     num_samples = sync_channel['data_headers'][0]['NumDataPoints']
 
     # denoised sync signal
-    sync_signal = sync_channel['data'][0] > sync_channel['data'][0].mean()
+    time_stamp = sync_channel['data_headers'][0]['Timestamp']
+    sync_signal = sync_channel['data'][0][time_stamp:] > sync_channel['data'][0][time_stamp:].mean()
 
     # expected number of samples between sync signal edges based on timing code //TODO add more details about the timing code
     samples_per_ms = int(sync_channel['samp_per_s']/1e3)
@@ -76,3 +74,48 @@ def parsesync(sync_channel, trial_time, successful_trial, max_sample_err=2, max_
     p_corrupted = 100 * sum([sync_block[i]['corrupted'] for i in range(len(sync_block))])/len(sync_block)
     if p_corrupted > 10:
         warnings.warn('{:.2f}% corrupted sync blocks. Timing estimate may be unreliable.'.format(p_corrupted))
+
+    # first sample index (ephys clock) when the sync block was first written to the file
+    ephys_block_idx = np.array([sync_block[i]['start'] for i in range(len(sync_block)) if not sync_block[i]['corrupted']])
+
+    # encoded time stamp (Speedgoat clock) associated with each sync block
+    speedgoat_block_time = np.array([sync_block[i]['time'] for i in range(len(sync_block)) if not sync_block[i]['corrupted']])
+
+    # trial start time (Speedgoat clock)
+    speedgoat_trial_start_time = [t[0] for t in trial_time]
+
+    # bin edges between ephys sample indices
+    ephys_block_idx_bins = np.concatenate((ephys_block_idx[:-1,np.newaxis], ephys_block_idx[1:,np.newaxis]), axis=1).mean(axis=1)
+    ephys_block_idx_bins = np.append(np.insert(ephys_block_idx_bins,0,0), np.Inf)
+
+    # bin edges between Speedgoat time stamp
+    speedgoat_block_time_bins = np.concatenate((speedgoat_block_time[:-1,np.newaxis], speedgoat_block_time[1:,np.newaxis]), axis=1).mean(axis=1)
+    speedgoat_block_time_bins = np.append(np.insert(speedgoat_block_time_bins,0,0), np.Inf)
+
+    # function to map ephys sample index to Speedgoat time base using a selected sync block
+    samp2time = lambda xi,sync_idx: round(speedgoat_block_time[sync_idx] + (xi-ephys_block_idx[sync_idx])/sync_channel['samp_per_s'], 6)
+
+    # preallocate array of trial start indices
+    ephys_trial_start_idx = np.empty(len(speedgoat_trial_start_time))
+
+    for i0,t0 in enumerate(speedgoat_trial_start_time):
+
+        if t0 < speedgoat_block_time[0] or t0 > speedgoat_block_time[-1]:
+            ephys_trial_start_idx[i0] = np.nan
+
+        else:
+            # find the sync block whose encoded time is nearest the trial start time
+            nearest_block = np.digitize(t0, speedgoat_block_time_bins) - 1
+
+            # sample index range containing the nearest sync block
+            idx_range = range(\
+                np.floor(ephys_block_idx_bins[nearest_block]).astype(int), \
+                1+np.ceil(ephys_block_idx_bins[1+nearest_block]).astype(int))
+
+            # nearest sample to the encoded trial start time
+            ephys_trial_start_idx[i0] = next(i for i in idx_range if samp2time(i,nearest_block) >= t0)
+
+    # temporal correction
+    ephys_trial_start_idx -= round(0.1 * sync_channel['samp_per_s'])
+
+    return ephys_trial_start_idx

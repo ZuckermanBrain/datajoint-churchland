@@ -1,7 +1,11 @@
+import os, sys, pathlib
+sys.path.insert(0, str(pathlib.Path(os.getcwd()).parents[0]) + '/brPY/')
 import datajoint as dj
 from ... import lab, acquisition, processing
 from . import pacman_acquisition
-from ...rigs.Jumanji import datasync
+from ...utilities import datasync
+from brpylib import NsxFile, brpylib_ver
+from datetime import datetime
 
 schema = dj.schema('churchland_shared_pacman_processing')
 
@@ -11,6 +15,43 @@ class AlignmentState(dj.Lookup):
     # Task state IDs used to align trials
     -> pacman_acquisition.TaskState
     """
+
+@schema
+class EphysTrialStart(dj.Imported):
+    definition = """
+    # Synchronizes continuous acquisition ephys data with behavior trials
+    -> pacman_acquisition.Behavior.Trial
+    ---
+    ephys_trial_start = null: int unsigned # sample index (ephys time base) corresponding to the trial start
+    """
+
+    key_source = pacman_acquisition.Behavior.Trial \
+        & (acquisition.Session & (acquisition.EphysRecording.Channel & {'channel_label':'sync'}))
+
+    def make(self, key):
+
+        session_key = (acquisition.Session & key).fetch1('KEY')
+
+        # fetch trial numbers and simulation times
+        trial_num, trial_time = (pacman_acquisition.Behavior.Trial & session_key).fetch('trial_number', 'simulation_time')
+
+        # fetch sync signal
+        nsx_path = (acquisition.EphysRecording & key).fetch1('ephys_file_path')
+        sync_channel_id = (acquisition.EphysRecording.Channel & key & {'channel_label': 'sync'}).fetch1('channel_id')
+        nsx_file = NsxFile(nsx_path)
+        sync_channel = nsx_file.getdata(sync_channel_id)
+        nsx_file.close()
+
+        # parse sync signal
+        ephys_trial_start = datasync.ephysxspeedgoat(sync_channel, trial_time)
+
+        # legacy adjustment
+        if session_key['session_date'] <= datetime.strptime('2018-10-11','%Y-%m-%d').date():
+            ephys_trial_start += round(0.1 * sync_channel['samp_per_s'])
+
+        # aggregate trial numbers and start indices
+        trial_key = [dict(**session_key, trial_number=trial, ephys_trial_start=i0) for trial,i0 in zip(trial_num,ephys_trial_start)]
+        self.insert(trial_key)
 
 @schema
 class SpikeFilter(dj.Lookup):
@@ -48,32 +89,17 @@ class NeuronPsth(dj.Computed):
     """
 
 @schema
-class TrialAlignment(dj.Imported):
+class TrialAlignment(dj.Computed):
     definition = """
-    # Alignment indices for each behavior trial
+    # Trial alignment indices for behavior and ephys data 
+    -> EphysTrialStart
     -> AlignmentState
-    -> pacman_acquisition.Behavior.Trial
     ---
-    -> acquisition.EphysRecording.Channel
-    alignment_index = null: int unsigned # alignment index (in Speedgoat time base)
-    behavior_alignment = null: longblob # alignment indices for Speedgoat data
-    ephys_alignment = null: longblob # alignment indices for Ephys data
+    behavior_alignment: longblob # alignment indices for Speedgoat data
+    ephys_alignment: longblob # alignment indices for Ephys data
     """
 
-    def make(self, key):
-
-        # fetch trial numbers and simulation times
-        trial_num, trial_time, successful_trial = (pacman_acquisition.Behavior.Trial & key).fetch('trial_number', 'simulation_time', 'successful_trial')
-
-        # fetch sync signal
-        nsx_path = (acquisition.EphysRecording & key).fetch1('ephys_file_path')
-        sync_channel_id = (acquisition.EphysRecording.Channel & key & {'channel_label': 'sync'}).fetch1('channel_id')
-        nsx_file = NsxFile(nsx_path)
-        sync_channel = nsx_file.getdata(sync_channel_id)
-        nsx_file.close()
-
-        # parse sync signal
-        datasync.parsesync(sync_channel, trial_time, successful_trial)
+    key_source = EphysTrialStart & 'successful_trial'
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 3

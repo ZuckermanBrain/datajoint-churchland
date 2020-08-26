@@ -9,8 +9,15 @@ from itertools import compress
 num_clock_bytes = 8
 num_len_bytes = 2
 
-# READ TASK STATES FROM SUMMARY
 def readtaskstates(filePath):
+    """Reads task states from .summary files
+
+    Args:
+        filePath ([type]): [description]
+
+    Returns:
+        [type]: [description]
+    """
     
     # read summary text from file
     fid = open(filePath,'r')
@@ -32,9 +39,15 @@ def readtaskstates(filePath):
     
     return taskStates
     
-
-# READ TRIAL PARAMETERS
 def readtrialparams(file_path):
+    """Reads trial parameters from .params files
+
+    Args:
+        file_path ([type]): [description]
+
+    Returns:
+        [type]: [description]
+    """
 
     assert file_path.endswith('.params'), 'Unrecognized Speedgoat parameters file'
 
@@ -58,8 +71,17 @@ def readtrialparams(file_path):
     
     return params
 
-# READ TRIAL DATA
 def readtrialdata(file_path, success_state, sample_rate):
+    """Reads trial data from .data files
+
+    Args:
+        file_path ([type]): [description]
+        success_state ([type]): [description]
+        sample_rate ([type]): [description]
+
+    Returns:
+        [type]: [description]
+    """
 
     assert file_path.endswith('.data'), 'Unrecognized Speedgoat data file'
     

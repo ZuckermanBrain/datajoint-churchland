@@ -1,6 +1,7 @@
 # %%
 
 import os, sys, pathlib
+os.chdir('/home/njm2149/Documents/datajoint-churchland/churchland_pipeline/users/njm2149')
 sys.path.insert(0, str(pathlib.Path(os.getcwd()).parents[2]))
 sys.path.insert(0, str(pathlib.Path(os.getcwd()).parents[2]) + '/brPY/')
 import datajoint as dj
@@ -13,7 +14,6 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from brpylib import NsxFile, brpylib_ver
-from collections import ChainMap
 
 
 # %%
@@ -41,7 +41,7 @@ if task_controller_hardware == 'Speedgoat':
     # update task states
     pacman_acquisition.TaskState.insert(summary, skip_duplicates=True)
 
-    # parameter and data files
+    # parameter and data files`
     beh_files = os.listdir(beh_path)
     param_files = list(filter(lambda f: f.endswith('.params'), beh_files))
     data_files = list(filter(lambda f: f.endswith('.data'), beh_files))

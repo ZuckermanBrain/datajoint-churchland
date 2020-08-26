@@ -1,0 +1,38 @@
+version: '3'
+services:
+    datajoint-churchland:
+        build:
+            context: ..
+            dockerfile: ./datajoint-churchland/Dockerfile
+        env_file: ./datajoint-churchland/.env
+        volumes:
+            - ./datajoint-churchland:/src/datajoint-churchland
+            - ./datajoint-churchland/churchland_pipeline_python:/datajoint-churchland/churchland_pipeline_python
+            - ./datajoint-churchland/images:/datajoint-churchland/images
+            - /srv/locker/churchland:/srv/locker/churchland
+        ports:
+            - "8894:8888"
+
+    datajoint-pacman:
+        build:
+            context: ..
+            dockerfile: ./datajoint-pacman/Dockerfile
+        env_file: ./datajoint-churchland/.env
+        volumes:
+            - ./datajoint-pacman/pacman_pipeline:/datajoint-pacman/pacman_pipeline
+        ports:
+            - "8895:8888"
+        depends_on:
+            datajoint-churchland
+
+    datajoint-njm2149:
+        build:
+            context: ..
+            dockerfile: ./datajoint-njm2149/Dockerfile-experimental
+        env_file: ./datajoint-churchland/.env
+        volumes:
+            - ./datajoint-njm2149/njm2149_experimental_pipeline:/datajoint-njm2149/njm2149_experimental_pipeline
+        ports:
+            - "8896:8888"
+        depends_on:
+            datajoint-pacman

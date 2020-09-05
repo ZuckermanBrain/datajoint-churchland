@@ -1,5 +1,9 @@
+# Blackrock python files
+brPY/
+
 # data files
 ./data/*
+
 # IDEA configs
 .idea/
 
@@ -8,7 +12,6 @@
 
 # macOS
 .DS_Store
-
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

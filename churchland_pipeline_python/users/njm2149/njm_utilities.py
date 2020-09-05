@@ -23,29 +23,6 @@ def schema_drop_order():
         'churchland_common_equipment'
     ]
 
-def next_key(query,key_index=0):
-    keys = (query.key_source - query).proj().fetch(as_dict=True)
-    if len(keys)>=1:
-        return keys[key_index]
-    else:
-        return None
-
-def get_children(table):
-    graph = table.connection.dependencies
-    graph.load()
-    children = [eval(dj.table.lookup_class_name(x, inspect.currentframe().f_globals)) for x in list(graph.children(table.full_table_name).keys())]
-    return children
-
-def get_parents(table):
-    graph = table.connection.dependencies
-    graph.load()
-    parents = [eval(dj.table.lookup_class_name(x, inspect.currentframe().f_globals)) for x in list(graph.parents(table.full_table_name).keys())]
-    return parents
-
-def populate_dependents(table):
-
-    children = get_children(table)
-
 def fill_sessions():
     """
     Fill remaining session data
@@ -62,4 +39,4 @@ def fill_sessions():
         acquisition.Session.Hardware.insert1(dict(
             **session_key,
             **(equipment.Hardware & {'hardware': '5lb Load Cell'}).fetch1('KEY')
-            ))
+            ), skip_duplicates=True)

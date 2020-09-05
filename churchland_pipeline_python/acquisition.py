@@ -6,7 +6,8 @@ from . import lab, equipment, reference
 from brpylib import NsxFile, brpylib_ver
 from collections import ChainMap
 
-schema = dj.schema('churchland_common_acquisition') # dj.schema(dj.config['database.prefix'] + 'churchland_common_acquisition')
+schema = dj.schema('churchland_common_acquisition') 
+#schema = dj.schema(dj.config.get('database.prefix','') + 'churchland_common_acquisition')
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 0
@@ -186,14 +187,6 @@ class EphysRecording(dj.Imported):
     ephys_duration: double # recording duration [sec]
     """
 
-    class BlackrockParams(dj.Part):
-        definition = """
-        # Ephys params unique to Blackrock system
-        -> master
-        ---
-        blackrock_timestamp: double # number of samples between pressing "record" and the clock start
-        """
-
     class Channel(dj.Part):
         definition = """
         # Ephys channel header
@@ -245,11 +238,6 @@ class EphysRecording(dj.Imported):
 
                 # insert self
                 self.insert1(key)
-
-                # append Timestamp and save to Blackrock part table
-                key = primary_key.copy()
-                key['blackrock_timestamp'] = nsx_data['data_headers'][0]['Timestamp']
-                self.BlackrockParams.insert1(key)
 
                 # insert channel header information //TODO double check the map files use the ID and not the label
                 for j, elec in enumerate(nsx_file.extended_headers):

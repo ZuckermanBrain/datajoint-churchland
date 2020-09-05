@@ -1,6 +1,6 @@
 import datajoint as dj
 from ... import lab, acquisition, equipment, reference
-from ...rigs.Jumanji import speedgoat
+from ...utilities import speedgoat
 import os, re
 
 schema = dj.schema('churchland_shared_pacman_acquisition')

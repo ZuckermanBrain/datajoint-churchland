@@ -1,0 +1,13 @@
+version: '3'
+services:
+    datajoint-churchland:
+        build: .
+        env_file: .env
+        volumes:
+            - .:/src/datajoint-churchland
+            - ./churchland_pipeline_python:/churchland_pipeline_python
+            - ./images:/images
+            - ./brPY:/brPY
+            - /srv/locker/churchland:/srv/locker/churchland
+        ports:
+            - "8894:8888"

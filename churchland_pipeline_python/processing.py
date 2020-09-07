@@ -1,7 +1,12 @@
+import os, sys, pathlib
+sys.path.insert(0, str(pathlib.Path(os.getcwd()).parents[0]))
+sys.path.insert(0, str(pathlib.Path(os.getcwd()).parents[0]) + '/brPY/')
 import datajoint as dj
 from . import acquisition, equipment
+from .utilities import datasync
+from brpylib import NsxFile, brpylib_ver
 
-schema = dj.schema('churchland_common_processing')
+schema = dj.schema('churchland_analyses_processing')
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 0
@@ -50,6 +55,41 @@ class Filter(dj.Lookup):
         sd: decimal(7,6) # filter standard deviation [seconds]
         width: tinyint unsigned # filter width [multiples of standard deviations]
         """
+        
+@schema
+class SyncBlock(dj.Imported):
+    definition = """
+    # Speedgoat sync blocks, decoded from ephys files
+    -> acquisition.EphysRecording
+    sync_block_start: int unsigned # sample index (ephys time base) corresponding to the beginning of the sync block
+    ---
+    sync_block_time: double # encoded simulation time (Speedgoat time base)
+    """
+
+    key_source = acquisition.EphysRecording \
+        & (acquisition.EphysRecording.Channel & {'channel_label':'sync'})
+
+    def make(self, key):
+
+        # fetch sync signal
+        nsx_path = (acquisition.EphysRecording & key).fetch1('ephys_file_path')
+        nsx_file = NsxFile(nsx_path)
+
+        sync_channel_id = (acquisition.EphysRecording.Channel & key & {'channel_label': 'sync'}).fetch1('channel_id')
+        sync_channel = nsx_file.getdata(sync_channel_id)
+
+        nsx_file.close()
+
+        # parse sync signal
+        sync_block = datasync.decodesyncsignal(sync_channel)
+
+        # remove corrupted blocks
+        sync_block = [block for block in sync_block if not block['corrupted']]
+
+        # append ephys recording data
+        block_key = [dict(**key, sync_block_start=block['start'], sync_block_time=block['time']) for block in sync_block]
+
+        self.insert(block_key)
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 1

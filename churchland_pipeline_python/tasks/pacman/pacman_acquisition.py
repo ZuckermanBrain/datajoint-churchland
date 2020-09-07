@@ -3,7 +3,7 @@ from ... import lab, acquisition, equipment, reference
 from ...utilities import speedgoat
 import os, re
 
-schema = dj.schema('churchland_shared_pacman_acquisition')
+schema = dj.schema('churchland_analyses_pacman_acquisition')
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 0

@@ -76,3 +76,44 @@ def decodesyncsignal(sync_channel, max_sample_err=2, max_time_step=0.2):
         warnings.warn('{:.2f}% corrupted sync blocks. Timing estimate may be unreliable.'.format(p_corrupted))
 
     return sync_block
+
+def ephystrialstart(fs_ephys, trial_time, sync_block_start, sync_block_time):
+
+    # trial start time (Speedgoat clock)
+    speedgoat_trial_start_time = [t[0] for t in trial_time]
+
+    # bin edges between ephys sample indices
+    sync_block_start_bins = np.concatenate((sync_block_start[:-1,np.newaxis], sync_block_start[1:,np.newaxis]), axis=1).mean(axis=1)
+    sync_block_start_bins = np.append(np.insert(sync_block_start_bins,0,0), np.Inf)
+
+    # bin edges between Speedgoat time stamp
+    sync_block_time_bins = np.concatenate((sync_block_time[:-1,np.newaxis], sync_block_time[1:,np.newaxis]), axis=1).mean(axis=1)
+    sync_block_time_bins = np.append(np.insert(sync_block_time_bins,0,0), np.Inf)
+
+    # function to map ephys sample index to Speedgoat time base using a selected sync block
+    samp2time = lambda xi,sync_idx: round(sync_block_time[sync_idx] + (xi-sync_block_start[sync_idx])/fs_ephys, 6)
+
+    # preallocate array of trial start indices
+    ephys_trial_start_idx = np.empty(len(speedgoat_trial_start_time))
+
+    for i0,t0 in enumerate(speedgoat_trial_start_time):
+
+        if t0 < sync_block_time[0] or t0 > sync_block_time[-1]:
+            ephys_trial_start_idx[i0] = np.nan
+
+        else:
+            # find the sync block whose encoded time is nearest the trial start time
+            nearest_block = np.digitize(t0, sync_block_time_bins) - 1
+
+            # sample index range containing the nearest sync block
+            idx_range = range(\
+                np.floor(sync_block_start_bins[nearest_block]).astype(int), \
+                1+np.ceil(sync_block_start_bins[1+nearest_block]).astype(int))
+
+            # nearest sample to the encoded trial start time
+            ephys_trial_start_idx[i0] = next(i for i in idx_range if samp2time(i,nearest_block) >= t0)
+
+    # temporal correction
+    ephys_trial_start_idx -= round(0.1 * fs_ephys)
+
+    return ephys_trial_start_idx

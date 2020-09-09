@@ -1,0 +1,11 @@
+version: '3'
+services:
+    datajoint:
+        build: .
+        env_file: .env
+        volumes:
+            - .:/src/datajoint-njm2149
+            - ./pacman:/pacman
+            - /srv/locker/churchland:/srv/locker/churchland
+        ports:
+            - "8900:8888"

@@ -1,6 +1,3 @@
-import os, sys, pathlib
-sys.path.insert(0, str(pathlib.Path(os.getcwd()).parents[0]))
-sys.path.insert(0, str(pathlib.Path(os.getcwd()).parents[0]) + '/brPY/')
 import datajoint as dj
 from . import acquisition, equipment
 from .utilities import datasync

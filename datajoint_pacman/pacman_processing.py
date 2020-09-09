@@ -1,10 +1,7 @@
-import os, sys, pathlib
-sys.path.insert(0, str(pathlib.Path(os.getcwd()).parents[2]))
-sys.path.insert(0, str(pathlib.Path(os.getcwd()).parents[2]) + '/brPY/')
 import datajoint as dj
-from ... import lab, acquisition, processing
+from churchland_pipeline_python import lab, acquisition, processing
+from churchland_pipeline_python.utilities import datasync
 from . import pacman_acquisition
-from ...utilities import datasync
 from brpylib import NsxFile, brpylib_ver
 from datetime import datetime
 

@@ -6,5 +6,6 @@ services:
         volumes:
             - .:/src/datajoint-pacman
             - /srv/locker/churchland:/srv/locker/churchland
+            - ./images:/images
         ports:
             - "8890:8888"

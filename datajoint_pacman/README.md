@@ -1,3 +1,12 @@
-# Pac-Man Task pipeline
+# Pac-Man Task Pipeline
 
-![pacman erd](../../../images/pacman_erd.png)
+## Pipeline schemas
+
+### Task
+![pacman erd](images/pacman_erd.png)
+
+### Acquisition
+![pacman acquisition erd](images/pacman_acquisition_erd.png)
+
+### Processing
+![pacman processing erd](images/pacman_processing_erd.png)

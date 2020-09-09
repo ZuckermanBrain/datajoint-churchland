@@ -57,17 +57,17 @@ If you feel happy with the changes you've made, you can add, commit and push the
 
 ## Pipeline schemas
 
-### Equipment list
+### Equipment
 ![equipment erd](images/equipment_erd.png)
 
-### Acquisition pipeline
+### Acquisition
 ![acquisition erd](images/acquisition_erd.png)
 
-### Common pipeline
+### Common
 ![common erd](images/common_erd.png)
 
-### Neural pipeline
+### Neural
 ![neural erd](images/neural_erd.png)
 
-### EMG pipeline
+### EMG
 ![emg erd](images/emg_erd.png)

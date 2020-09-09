@@ -7,5 +7,6 @@ services:
             - .:/src/datajoint-pacman
             - /src/datajoint-churchland:/datajoint-churchland
             - /srv/locker/churchland:/srv/locker/churchland
+            - ./images:/images
         ports:
             - "8891:8888"

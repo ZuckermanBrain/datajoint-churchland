@@ -1,13 +1,11 @@
-import os, sys, pathlib
-sys.path.insert(0, str(pathlib.Path(os.getcwd()).parents[0]) + '/brPY/')
 import datajoint as dj
-from ... import lab, acquisition, processing
+from churchland_pipeline_python import lab, acquisition, processing
+from churchland_pipeline_python.utilities import datasync
 from . import pacman_acquisition
-from ...utilities import datasync
 from brpylib import NsxFile, brpylib_ver
 from datetime import datetime
 
-schema = dj.schema('churchland_shared_pacman_processing')
+schema = dj.schema('churchland_analyses_pacman_processing')
 
 @schema
 class AlignmentState(dj.Lookup):
@@ -25,33 +23,36 @@ class EphysTrialStart(dj.Imported):
     ephys_trial_start = null: int unsigned # sample index (ephys time base) corresponding to the trial start
     """
 
-    key_source = pacman_acquisition.Behavior.Trial \
-        & (acquisition.Session & (acquisition.EphysRecording.Channel & {'channel_label':'sync'}))
+    key_source = pacman_acquisition.Behavior.Trial & (acquisition.Session & processing.SyncBlock)
 
     def make(self, key):
 
         session_key = (acquisition.Session & key).fetch1('KEY')
 
-        # fetch trial numbers and simulation times
-        trial_num, trial_time = (pacman_acquisition.Behavior.Trial & session_key).fetch('trial_number', 'simulation_time')
+        # ephys sample rate
+        fs_ephys = (acquisition.EphysRecording & session_key).fetch1('ephys_sample_rate') 
 
-        # fetch sync signal
-        nsx_path = (acquisition.EphysRecording & key).fetch1('ephys_file_path')
-        sync_channel_id = (acquisition.EphysRecording.Channel & key & {'channel_label': 'sync'}).fetch1('channel_id')
-        nsx_file = NsxFile(nsx_path)
-        sync_channel = nsx_file.getdata(sync_channel_id)
-        nsx_file.close()
+        # all trial keys with simulation time
+        trial_keys = (pacman_acquisition.Behavior.Trial & session_key).fetch('KEY','simulation_time',as_dict=True)
 
-        # parse sync signal
-        ephys_trial_start = datasync.ephysxspeedgoat(sync_channel, trial_time)
+        # pop simulation time (Speedgoat clock) from trial key
+        trial_time = [trial.pop('simulation_time',None) for trial in trial_keys]
+
+        # sync block start index and encoded time stamp
+        sync_block_start, sync_block_time = (processing.SyncBlock & session_key).fetch('sync_block_start', 'sync_block_time')
+
+        # get trial start index in ephys time base
+        ephys_trial_start_idx = datasync.ephystrialstart(fs_ephys, trial_time, sync_block_start, sync_block_time)
 
         # legacy adjustment
         if session_key['session_date'] <= datetime.strptime('2018-10-11','%Y-%m-%d').date():
-            ephys_trial_start += round(0.1 * sync_channel['samp_per_s'])
+            ephys_trial_start_idx += round(0.1 * fs_ephys)
 
-        # aggregate trial numbers and start indices
-        trial_key = [dict(**session_key, trial_number=trial, ephys_trial_start=i0) for trial,i0 in zip(trial_num,ephys_trial_start)]
-        self.insert(trial_key)
+        # append ephys trial start to key
+        trial_keys = [dict(**trial, ephys_trial_start=i0) for trial,i0 in zip(trial_keys,ephys_trial_start_idx)]
+
+        self.insert(trial_keys)
+
 
 @schema
 class SpikeFilter(dj.Lookup):

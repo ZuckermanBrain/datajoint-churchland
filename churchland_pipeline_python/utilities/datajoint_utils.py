@@ -2,8 +2,8 @@ import datajoint as dj
 import inspect
 from itertools import chain
 from functools import reduce
-from .. import lab, acquisition, equipment, reference
-from ..tasks.pacman import pacman_acquisition, pacman_processing
+from churchland_pipeline_python import lab, acquisition, equipment, reference
+from datajoint_pacman import pacman_acquisition, pacman_processing
 
 def get_children(table):
     graph = table.connection.dependencies

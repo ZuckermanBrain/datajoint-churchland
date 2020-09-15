@@ -1,6 +1,6 @@
 version: '3'
 services:
-    datajoint-churchland:
+    datajoint:
         build: .
         env_file: .env
         volumes:
@@ -10,4 +10,4 @@ services:
             - ./brPY:/brPY
             - /srv/locker/churchland:/srv/locker/churchland
         ports:
-            - "8894:8888"
+            - "8888:8888"

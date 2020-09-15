@@ -1,7 +1,9 @@
 import datajoint as dj
 from churchland_pipeline_python import lab, acquisition, equipment, reference
-from churchland_pipeline_python.utilities import speedgoat
+from churchland_pipeline_python.utilities import speedgoat, datajoint_utils as dju
 import os, re
+import numpy as np
+from decimal import *
 
 schema = dj.schema('churchland_analyses_pacman_acquisition')
 
@@ -219,6 +221,71 @@ class Behavior(dj.Imported):
         -> master
         -> ConditionParams
         """
+
+        def targetforce(self):
+
+            # condition keys
+            cond_keys = self.fetch('KEY')
+
+            # construct target for each key
+            t = []
+            force = []
+            for key in cond_keys:
+
+                # join condition table with part tables
+                joined_table, part_tables = dju.joinparts(ConditionParams, key, depth=2)
+
+                # condition parameters
+                cond_params = (joined_table & key).fetch1()
+
+                # get precision from Decimal
+                prec = max([abs(v.as_tuple().exponent) for v in cond_params.values() if type(v)==Decimal])
+
+                # convert condition parameters to float
+                cond_params = {k:float(v) if type(v)==Decimal else v for k,v in cond_params.items()}
+
+                # get condition behavioral sample rate
+                Fs = (acquisition.BehaviorRecording & (self & key)).fetch1('behavior_sample_rate')
+
+                # time vector
+                t.append(np.round(np.arange(-cond_params['target_pad']+1/Fs, \
+                    cond_params['target_duration']+cond_params['target_pad']+1/Fs, 1/Fs), prec))
+
+                # target force functions
+                if ConditionParams.Static in part_tables:
+
+                    force_fcn = lambda t,c: c['target_offset'] * np.zeros(t.shape)
+
+                elif ConditionParams.Ramp in part_tables:
+
+                    force_fcn = lambda t,c: (c['target_amplitude']/c['target_duration']) * t
+
+                elif ConditionParams.Sine in part_tables:
+
+                    force_fcn = lambda t,c: c['target_amplitude']/2 * (1 - np.cos(2*np.pi*c['target_frequency']*t))
+
+                elif ConditionParams.Chirp in part_tables:
+
+                    force_fcn = lambda t,c: c['target_amplitude']/2 * \
+                        (1 - np.cos(2*np.pi*t * (c['target_frequency_init'] + (c['target_frequency_final']-c['target_frequency_init'])/(2*c['target_duration'])*t)))
+
+                else:
+                    print('Unrecognized condition table')
+
+                # indices of target regions
+                t_idx = {
+                    'pre': t[-1]<=0,
+                    'target': (t[-1]>0) & (t[-1]<=cond_params['target_duration']),
+                    'post': t[-1]>cond_params['target_duration']}
+
+                # target force profile
+                force.append(np.empty(len(t[-1])))
+                force[-1][t_idx['pre']]    = force_fcn(t[-1][np.argmax(t_idx['target'])], cond_params) * np.ones(np.count_nonzero(t_idx['pre']))
+                force[-1][t_idx['target']] = force_fcn(t[-1][t_idx['target']],            cond_params)
+                force[-1][t_idx['post']]   = force_fcn(t[-1][np.argmax(t_idx['post'])],   cond_params) * np.ones(np.count_nonzero(t_idx['post']))
+                force[-1] = force[-1] + cond_params['target_offset']
+
+            return t, force
 
     class Trial(dj.Part):
         definition = """

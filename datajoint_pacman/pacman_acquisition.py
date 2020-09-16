@@ -1,7 +1,7 @@
 import datajoint as dj
 from churchland_pipeline_python import lab, acquisition, equipment, reference
 from churchland_pipeline_python.utilities import speedgoat, datajoint_utils as dju
-import os, re
+import os, re, inspect
 import numpy as np
 from decimal import *
 
@@ -233,7 +233,7 @@ class Behavior(dj.Imported):
             for key in cond_keys:
 
                 # join condition table with part tables
-                joined_table, part_tables = dju.joinparts(ConditionParams, key, depth=2)
+                joined_table, part_tables = dju.joinparts(ConditionParams, key, depth=2, context=inspect.currentframe())
 
                 # condition parameters
                 cond_params = (joined_table & key).fetch1()

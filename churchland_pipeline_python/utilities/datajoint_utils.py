@@ -3,30 +3,36 @@ import inspect
 from itertools import chain
 from functools import reduce
 
-def get_children(table):
+def get_children(table, context=[]):
     graph = table.connection.dependencies
     graph.load()
     names = list(graph.children(table.full_table_name).keys())
-    for frame in inspect.stack():
-        try:
-            eval(dj.table.lookup_class_name(names[0], frame[0].f_globals), frame[0].f_globals)
-        except TypeError:
-            pass
-        else:
-            children = [eval(dj.table.lookup_class_name(x, frame[0].f_globals), frame[0].f_globals) for x in names]
+    if context:
+        children = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in names]
+    else:
+        for frame in inspect.stack():
+            try:
+                eval(dj.table.lookup_class_name(names[0], frame[0].f_globals), frame[0].f_globals)
+            except TypeError:
+                pass
+            else:
+                children = [eval(dj.table.lookup_class_name(x, frame[0].f_globals), frame[0].f_globals) for x in names]
     return children
 
-def get_parents(table):
+def get_parents(table, context=[]):
     graph = table.connection.dependencies
     graph.load()
     names = list(graph.parents(table.full_table_name).keys())
-    for frame in inspect.stack():
-        try:
-            eval(dj.table.lookup_class_name(names[0], frame[0].f_globals), frame[0].f_globals)
-        except TypeError:
-            pass
-        else:
-            parents = [eval(dj.table.lookup_class_name(x, frame[0].f_globals), frame[0].f_globals) for x in names]
+    if context:
+        parents = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in names]
+    else:
+        for frame in inspect.stack():
+            try:
+                eval(dj.table.lookup_class_name(names[0], frame[0].f_globals), frame[0].f_globals)
+            except TypeError:
+                pass
+            else:
+                parents = [eval(dj.table.lookup_class_name(x, frame[0].f_globals), frame[0].f_globals) for x in names]
     return parents
 
 def next_key(query,key_index=0):
@@ -36,7 +42,7 @@ def next_key(query,key_index=0):
     else:
         return None
 
-def joinparts(table, key={}, depth=1):
+def joinparts(table, key={}, depth=1, context=[]):
     
     parts = dict.fromkeys(range(1+depth),[])
     for layer in range(1+depth):
@@ -44,7 +50,7 @@ def joinparts(table, key={}, depth=1):
             parts[layer] = [table]
 
         else:
-            parts[layer] = [child for parent in parts[layer-1] for child in get_children(parent) if set(get_parents(child))=={parent}]
+            parts[layer] = [child for parent in parts[layer-1] for child in get_children(parent, context=context) if set(get_parents(child, context=context))=={parent}]
             parts[layer] = [child for child in parts[layer] if (table * child) & key]
 
     part_tables = list(chain.from_iterable(parts.values()))

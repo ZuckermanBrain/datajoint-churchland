@@ -2,19 +2,31 @@ import datajoint as dj
 import inspect
 from itertools import chain
 from functools import reduce
-from churchland_pipeline_python import lab, acquisition, equipment, reference
-from datajoint_pacman import pacman_acquisition, pacman_processing
 
 def get_children(table):
     graph = table.connection.dependencies
     graph.load()
-    children = [eval(dj.table.lookup_class_name(x, inspect.currentframe().f_globals)) for x in list(graph.children(table.full_table_name).keys())]
+    names = list(graph.children(table.full_table_name).keys())
+    for frame in inspect.stack():
+        try:
+            eval(dj.table.lookup_class_name(names[0], frame[0].f_globals), frame[0].f_globals)
+        except TypeError:
+            pass
+        else:
+            children = [eval(dj.table.lookup_class_name(x, frame[0].f_globals), frame[0].f_globals) for x in names]
     return children
 
 def get_parents(table):
     graph = table.connection.dependencies
     graph.load()
-    parents = [eval(dj.table.lookup_class_name(x, inspect.currentframe().f_globals)) for x in list(graph.parents(table.full_table_name).keys())]
+    names = list(graph.parents(table.full_table_name).keys())
+    for frame in inspect.stack():
+        try:
+            eval(dj.table.lookup_class_name(names[0], frame[0].f_globals), frame[0].f_globals)
+        except TypeError:
+            pass
+        else:
+            parents = [eval(dj.table.lookup_class_name(x, frame[0].f_globals), frame[0].f_globals) for x in names]
     return parents
 
 def next_key(query,key_index=0):

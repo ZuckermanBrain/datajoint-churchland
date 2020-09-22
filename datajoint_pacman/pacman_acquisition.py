@@ -245,7 +245,7 @@ class ConditionParams(dj.Lookup):
         force[t_idx['pre']]    = force_fcn(t[np.argmax(t_idx['target'])], cond_params) * np.ones(np.count_nonzero(t_idx['pre']))
         force[t_idx['target']] = force_fcn(t[t_idx['target']],            cond_params)
         force[t_idx['post']]   = force_fcn(t[np.argmax(t_idx['post'])],   cond_params) * np.ones(np.count_nonzero(t_idx['post']))
-        force = force + cond_params['target_offset']
+        force = (force + cond_params['target_offset']) * cond_params['force_max']
 
         return t, force
 
@@ -275,8 +275,8 @@ class Behavior(dj.Imported):
         -> master
         -> ConditionParams
         ---
-        condition_time: longblob # target time vector
-        condition_force: longblob # target force profile
+        condition_time: longblob # target time vector (s)
+        condition_force: longblob # target force profile (N)
         """
 
     class Trial(dj.Part):
@@ -299,8 +299,7 @@ class Behavior(dj.Imported):
         
     def make(self, key):
 
-        # insert entry to Behavior table
-        Behavior.insert1(key)
+        self.insert1(key)
 
         # local path to behavioral summary file and sample rate
         behavior_summary_path, fs = (acquisition.BehaviorRecording & key).fetch1('behavior_summary_file_path', 'behavior_sample_rate')
@@ -415,9 +414,11 @@ class Behavior(dj.Imported):
 
                     # insert condition data
                     cond_id = (cond_rel & all_cond_attr).fetch1('condition_id')
-                    t,force = ConditionParams.targetforce(cond_id,fs)
-                    cond_key = dict(**key, condition_id=cond_id, condition_time=t, condition_force=force)
-                    self.Condition.insert1(cond_key, skip_duplicates=True)
+                    cond_key = dict(**key, condition_id=cond_id)
+                    if not(self.Condition & cond_key):
+                        t,force = ConditionParams.targetforce(cond_id,fs)
+                        cond_key.update(condition_time=t, condition_force=force)
+                        self.Condition.insert1(cond_key, allow_direct_insert=True)
 
                     # insert trial data
                     trial_key = dict(**key, trial_number=trial, condition_id=cond_id, **data, save_tag=params['saveTag'])

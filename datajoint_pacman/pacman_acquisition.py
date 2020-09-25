@@ -1,6 +1,6 @@
 import datajoint as dj
 from churchland_pipeline_python import lab, acquisition, equipment, reference
-from churchland_pipeline_python.utilities import speedgoat, datajoint_utils as dju
+from churchland_pipeline_python.utilities import speedgoat, datajointutils as dju
 import os, re, inspect
 import numpy as np
 from decimal import *

@@ -1,4 +1,15 @@
+"""Equipment schema.
+
+This module contains class definitions for equipment.
+
+Coordinate system: x (left/right, onscreen); y (up/down, onscreen); z (into screen)
+"""
+
 import datajoint as dj
+import numpy as np
+import re
+from matplotlib import pyplot as plt, patches as patches
+from mpl_toolkits.mplot3d import Axes3D, art3d
 
 schema = dj.schema('churchland_common_equipment')
 
@@ -38,42 +49,185 @@ class Parameter(dj.Lookup):
     ]
 
 @schema
-class ProbeModel(dj.Lookup):
+class ElectrodeGeometry(dj.Lookup):
     definition = """
-    # Model and geometry of an electrophysiology probe
-    probe_model:          varchar(32)          # e.g. Utah, Neuropixels
+    electrode_geometry_id: smallint unsigned # unique ID
     ---
-    probe_type:           enum('neural','emg') # type of data used to record
-    probe_manufacturer:   varchar(255)         # manufacturer of the probe
-    probe_version = null: float                # version number
-    probe_manual = null:  varchar(255)         # path to probe manual
+    electrode_base_x_length:              float                           # (m) length of base along x-axis
+    electrode_base_y_length:              float                           # (m) length of base along y-axis
+    electrode_base_z_length   = 0:        float                           # (m) length of base along z-axis
+    electrode_base_shape      = 'cuboid': enum('cuboid','cylinder')       # base shape
+    electrode_base_insulation = 0:        float                           # (m) insulation coverage, starting from base top
+    electrode_base_rotation   = 0:        float                           # (multiples of 2*pi) base rotation in x-y plane
+    electrode_tip_z_length    = 0:        float                           # (m) length of tip along z-axis
+    electrode_tip_profile     = 'linear': enum('linear','curved','sharp') # tip profile
+    electrode_tip_insulation  = 0:        float                           # (m) insulation coverage, starting from tip bottom
+    """
+
+    contents = [
+        #id  |base-x   |base-y   |base-z   |base shape |base ins. |base rot. |tip-z   |tip prof. |tip ins.
+        [0,   12e-6,    12e-6,    0,        'cuboid',   0,         0,         0,       'linear',  0],        # flat square (e.g., Neuropixels)
+        [1,   15e-6,    15e-6,    0,        'cylinder', 0,         0,         0,       'linear',  0],        # flat circle (e.g., S-Probes)
+        [2,   100e-6,   100e-6,   0,        'cylinder', 0,         0,         1.5e-3,  'sharp',   0],        # cone (e.g., Utah array)
+        [3,   100e-6,   100e-6,   139.5e-3, 'cylinder', 129.5e-3,  0,         0.5e-3,  'sharp',   0.4e-3],   # sharp cylinder w/ insulation (e.g., FHC sharp electrode)
+        [4,   50e-6,    50e-6,    123e-3,   'cuboid',   0,         0,         2e-3,    'linear',  0],        # blunt cylinder w/ insulation (e.g., Natus hook-wire)
+        [5,   50e-6,    50e-6,    120e-3,   'cuboid',   0,         0,         5e-3,    'linear',  3e-3],     # blunt cylinder w/ insulation (e.g., Natus hook-wire)
+    ]
+
+    def plot(self, center_coords, resolution=100):
+
+        assert len(self) == 1, 'Specify one entry for plotting'
+
+        # fetch electrode parameters
+        params = self.fetch1()
+
+        # ---------
+        # PLOT BASE
+        # ---------
+
+        # base axes lengths
+        base_axes_lengths = np.array([v for k,v in params.items() if re.search(r'base_\w_length',k) is not None])
+
+        fig = plt.figure()
+
+        # plot 2D
+        if params['electrode_base_z_length'] == params['electrode_tip_z_length'] == 0:
+
+            # base coordinates
+            if params['electrode_base_shape'] == 'cuboid': # rectangle
+
+                base_coords = (base_axes_lengths * np.array([
+                    [ 0.5,-0.5,0],
+                    [ 0.5, 0.5,0],
+                    [-0.5, 0.5,0],
+                    [-0.5,-0.5,0]])).T
+                base_coords = np.concatenate((base_coords, base_coords[:,0,None]), axis=1)
+
+            else: # ellipse
+
+                theta = np.linspace(0, 2*np.pi, resolution)
+                base_coords = np.concatenate((\
+                    base_axes_lengths[0]/2 * np.cos(theta)[:,np.newaxis],\
+                    base_axes_lengths[1]/2 * np.sin(theta)[:,np.newaxis],\
+                    np.zeros((len(theta),1))), axis=1).T
+
+            # plot base at each center
+            for center in center_coords:
+                plt.plot(center[0]+base_coords[0,:], center[1]+base_coords[1,:], 'k')
+
+        else: # plot 3D
+
+            ax = fig.gca(projection='3d')
+
+            if params['electrode_base_shape'] == 'cuboid': # cuboid
+
+                plot_shape = 'cuboid'
+
+                # --------
+                # PLOT TIP
+                # --------
+
+                if params['electrode_tip_profile'] == 'linear':
+
+                    plot_shape = 'cuboid'
+
+                elif params['electrode_tip_profile'] == 'curved':
+
+                    plot_shape = 'pyramid with curved faces'
+
+                else: # sharp
+
+                    plot_shape = 'pyramid'
+            
+
+            else: # elliptic cylinder
+
+                z = np.linspace(0, base_axes_lengths[2], resolution)
+                theta = np.linspace(0, 2*np.pi, resolution)
+                theta_grid, z_grid = np.meshgrid(theta, z)
+                x_grid = base_axes_lengths[0]/2 * np.cos(theta_grid)
+                y_grid = base_axes_lengths[1]/2 * np.sin(theta_grid)
+                
+                for center in center_coords:
+
+                    # plot sides
+                    ax.plot_surface(center[0]+x_grid, center[1]+y_grid, center[2]+z_grid)
+
+                    # overlay insulation
+                    
+                    # plot bottom
+                    bottom = patches.Ellipse((center[0],center[1]), base_axes_lengths[0], base_axes_lengths[1])
+                    ax.add_patch(bottom)
+                    art3d.pathpatch_2d_to_3d(bottom)
+
+                # --------
+                # PLOT TIP
+                # --------
+
+                if params['electrode_tip_profile'] == 'linear':
+
+                    plot_shape = 'cylinder'
+
+                elif params['electrode_tip_profile'] == 'curved':
+
+                    plot_shape = 'dome'
+
+                else: # sharp
+
+                    plot_shape = 'cone'
+
+@schema
+class ElectrodeArrayModel(dj.Lookup):
+    definition = """
+    # Model of an electrode array
+    electrode_array_model:      varchar(32)     # model name (e.g., Wire, Utah, Neuropixels)
+    ---
+    tissue_type: enum('brain','muscle') # tissue array used to record from
+    invasive: bool
+    base_vertices = null: longblob # (m; 3xN array) base hull vertices xyz-coordinates relative to origin
     """
 
     class Shank(dj.Part):
         definition = """
         -> master
-        shank:        int unsigned # shank index
+        shank: int unsigned # shank index
         ---
-        shank_x:      float        # (um) x-coordinate of each shank, relative to the shank at the corner/end of the base (x = 0)
-        shank_y:      float        # (um) y-coordinate of each shank, relative to the shank at the corner/end of the base (y = 0)
-        shank_width:  float        # (mm)
-        shank_length: float        # (mm)
+        shank_vertices = null: longblob # (m; 3xN array) shank hull vertices xyz-coordinates relative to base
         """
 
-    class Electrode(dj.Part):
+    class Site(dj.Part):
         definition = """
-        # Recording sites
         -> master.Shank
-        electrode:                 int unsigned # electrode index
+        site: int unsigned # site index
         ---
-        electrode_x:               float        # (um) x-coordinate of the electrode, relative to the bottom tip of the shank (x = 0)
-        electrode_z:               float        # (um) z-coordinate of the electrode, relative to the bottom tip of the shank (z = 0)
-        electrode_diameter = null: float        # (um)
+        site_x: float # (m) site center x-coordinate relative to shank
+        site_y: float # (m) site center y-coordinate relative to shank
+        site_z: float # (m) site center xz-coordinate relative to shank
+        -> ElectrodeGeometry
         """
+
+    #def summarize(self):
+
+    # def build(design='planar array'):
+
+    #     if design == 'planar array':
+
+    #     elif design == 'fine wire':
+
+    #     elif design == 'linear array':
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 1
 # -------------------------------------------------------------------------------------------------------------------------------
+
+@schema
+class ElectrodeArray(dj.Lookup):
+    definition = """
+    -> ElectrodeArrayModel
+    electrode_array_id: int unsigned # unique ID number
+    ---
+    electrode_array_serial = null: varchar(255) # serial number
+    """
 
 @schema
 class Hardware(dj.Lookup):
@@ -107,15 +261,6 @@ class Hardware(dj.Lookup):
     ]
 
 @schema
-class Probe(dj.Lookup):
-    definition = """
-    -> ProbeModel
-    probe_id:       int unsigned # unique ID number
-    ---
-    probe_serial:   varchar(255) # serial number
-    """
-
-@schema
 class Software(dj.Lookup):
     definition = """
     software:                       varchar(32)   # software name
@@ -142,3 +287,21 @@ class Software(dj.Lookup):
         ['Unity 3D',     '',      'graphics',         'Unity Technologies', 'San Francisco, CA', ''],
         ['Psychtoolbox', '3.0',   'graphics',         'open source',        '',                  '']
     ]
+
+# -------------------------------------------------------------------------------------------------------------------------------
+# LEVEL 2
+# -------------------------------------------------------------------------------------------------------------------------------
+
+@schema
+class ElectrodeArrayConfig(dj.Lookup):
+    definition = """
+    -> ElectrodeArray
+    electrode_array_config_id: int unsigned # unique configuration ID
+    """
+
+    class Channel(dj.Part):
+        definition = """
+        -> master
+        -> ElectrodeArrayModel.Site
+        channel: int unsigned # channel index (i.e., on recording file)
+        """

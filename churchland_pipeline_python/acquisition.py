@@ -309,7 +309,7 @@ class EmgChannelGroup(dj.Manual):
     definition = """
     -> EphysRecording
     -> reference.Muscle
-    -> equipment.Probe
+    -> equipment.ElectrodeArray
     ---
     emg_channel_notes: varchar(4095) # notes for the channel set
     """
@@ -330,7 +330,7 @@ class NeuralChannelGroup(dj.Manual):
     definition = """
     -> EphysRecording
     -> reference.BrainRegion
-    -> equipment.Probe
+    -> equipment.ElectrodeArray
     ---
     hemisphere: enum('left', 'right')   # brain hemisphere
     neural_channel_notes: varchar(4095) # notes for the channel set

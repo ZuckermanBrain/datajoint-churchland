@@ -1,7 +1,9 @@
 import datajoint as dj
 from churchland_pipeline_python import lab, acquisition, equipment, reference
-from churchland_pipeline_python.utilities import speedgoat
-import os, re
+from churchland_pipeline_python.utilities import speedgoat, datajointutils as dju
+import os, re, inspect
+import numpy as np
+from decimal import *
 
 schema = dj.schema('churchland_analyses_pacman_acquisition')
 
@@ -125,7 +127,7 @@ class ConditionParams(dj.Lookup):
             force_inverted = params['frcPol']==-1
         )
 
-        cond_rel = ConditionParams.Force
+        cond_rel = self.Force
 
         # stimulation attributes
         if params.get('stim')==1:
@@ -137,11 +139,11 @@ class ConditionParams(dj.Lookup):
                 if prog.search(k) is not None and k != 'stimDelay'
                 }
 
-            cond_rel = cond_rel * ConditionParams.Stim
+            cond_rel = cond_rel * self.Stim
             
         else:
             stim_attr = dict()
-            cond_rel = cond_rel - ConditionParams.Stim
+            cond_rel = cond_rel - self.Stim
 
         # target attributes
         targ_attr = dict(
@@ -153,19 +155,19 @@ class ConditionParams(dj.Lookup):
         # target type attributes
         if params['type'] == 'STA':
 
-            targ_type_rel = ConditionParams.Static
+            targ_type_rel = self.Static
             targ_type_attr = dict()
 
         elif params['type'] == 'RMP':
 
-            targ_type_rel = ConditionParams.Ramp
+            targ_type_rel = self.Ramp
             targ_type_attr = dict(
                 target_amplitude = params['amplitude'][0]
             )
 
         elif params['type'] == 'SIN':
 
-            targ_type_rel = ConditionParams.Sine
+            targ_type_rel = self.Sine
             targ_type_attr = dict(
                 target_amplitude = params['amplitude'][0],
                 target_frequency = params['frequency'][0]
@@ -173,14 +175,14 @@ class ConditionParams(dj.Lookup):
 
         elif params['type'] == 'CHP':
 
-            targ_type_rel = ConditionParams.Chirp
+            targ_type_rel = self.Chirp
             targ_type_attr = dict(
                 target_amplitude = params['amplitude'][0],
                 target_frequency_init = params['frequency'][0],
                 target_frequency_final = params['frequency'][1]
             )
 
-        cond_rel = cond_rel * ConditionParams.Target * targ_type_rel
+        cond_rel = cond_rel * self.Target * targ_type_rel
 
         # aggregate all parameter attributes into a dictionary
         cond_attr = dict(
@@ -192,6 +194,61 @@ class ConditionParams(dj.Lookup):
 
         return cond_attr, cond_rel, targ_type_rel
     
+    @classmethod
+    def targetforce(self, condition_id, Fs):
+
+        # join condition table with part tables
+        joined_table, part_tables = dju.joinparts(self, {'condition_id': condition_id}, depth=2, context=inspect.currentframe())
+
+        # condition parameters
+        cond_params = joined_table.fetch1()
+
+        # get precision from Decimal
+        prec = max([abs(v.as_tuple().exponent) for v in cond_params.values() if type(v)==Decimal])
+
+        # convert condition parameters to float
+        cond_params = {k:float(v) if type(v)==Decimal else v for k,v in cond_params.items()}
+
+        # time vector
+        t = np.round(np.arange(-cond_params['target_pad']+1/Fs, \
+            cond_params['target_duration']+cond_params['target_pad']+1/Fs, 1/Fs), prec)
+
+        # target force functions
+        if self.Static in part_tables:
+
+            force_fcn = lambda t,c: c['target_offset'] * np.zeros(t.shape)
+
+        elif self.Ramp in part_tables:
+
+            force_fcn = lambda t,c: (c['target_amplitude']/c['target_duration']) * t
+
+        elif self.Sine in part_tables:
+
+            force_fcn = lambda t,c: c['target_amplitude']/2 * (1 - np.cos(2*np.pi*c['target_frequency']*t))
+
+        elif self.Chirp in part_tables:
+
+            force_fcn = lambda t,c: c['target_amplitude']/2 * \
+                (1 - np.cos(2*np.pi*t * (c['target_frequency_init'] + (c['target_frequency_final']-c['target_frequency_init'])/(2*c['target_duration'])*t)))
+
+        else:
+            print('Unrecognized condition table')
+
+        # indices of target regions
+        t_idx = {
+            'pre': t<=0,
+            'target': (t>0) & (t<=cond_params['target_duration']),
+            'post': t>cond_params['target_duration']}
+
+        # target force profile
+        force = np.empty(len(t))
+        force[t_idx['pre']]    = force_fcn(t[np.argmax(t_idx['target'])], cond_params) * np.ones(np.count_nonzero(t_idx['pre']))
+        force[t_idx['target']] = force_fcn(t[t_idx['target']],            cond_params)
+        force[t_idx['post']]   = force_fcn(t[np.argmax(t_idx['post'])],   cond_params) * np.ones(np.count_nonzero(t_idx['post']))
+        force = (force + cond_params['target_offset']) * cond_params['force_max']
+
+        return t, force
+
 @schema
 class TaskState(dj.Lookup):
     definition = """
@@ -210,7 +267,6 @@ class Behavior(dj.Imported):
     definition = """
     # Behavioral data imported from Speedgoat
     -> acquisition.BehaviorRecording
-    ---
     """
     
     class Condition(dj.Part):
@@ -218,6 +274,9 @@ class Behavior(dj.Imported):
         # Condition data
         -> master
         -> ConditionParams
+        ---
+        condition_time: longblob # target time vector (s)
+        condition_force: longblob # target force profile (N)
         """
 
     class Trial(dj.Part):
@@ -240,8 +299,7 @@ class Behavior(dj.Imported):
         
     def make(self, key):
 
-        # insert entry to Behavior table
-        Behavior.insert1(key)
+        self.insert1(key)
 
         # local path to behavioral summary file and sample rate
         behavior_summary_path, fs = (acquisition.BehaviorRecording & key).fetch1('behavior_summary_file_path', 'behavior_sample_rate')
@@ -357,11 +415,14 @@ class Behavior(dj.Imported):
                     # insert condition data
                     cond_id = (cond_rel & all_cond_attr).fetch1('condition_id')
                     cond_key = dict(**key, condition_id=cond_id)
-                    Behavior.Condition.insert1(cond_key, skip_duplicates=True)
+                    if not(self.Condition & cond_key):
+                        t,force = ConditionParams.targetforce(cond_id,fs)
+                        cond_key.update(condition_time=t, condition_force=force)
+                        self.Condition.insert1(cond_key, allow_direct_insert=True)
 
                     # insert trial data
-                    trial_key = dict(**cond_key, **data, trial_number=trial, save_tag=params['saveTag'])
-                    Behavior.Trial.insert1(trial_key)
+                    trial_key = dict(**key, trial_number=trial, condition_id=cond_id, **data, save_tag=params['saveTag'])
+                    self.Trial.insert1(trial_key)
 
 
 @schema

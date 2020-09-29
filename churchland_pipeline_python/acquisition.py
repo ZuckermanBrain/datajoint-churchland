@@ -15,7 +15,8 @@ schema = dj.schema('churchland_common_acquisition')
 class Task(dj.Lookup):
     definition = """
     # Experimental tasks
-    task: varchar(32) # unique task name
+    task:         varchar(32) # unique task name
+    task_version: varchar(8)  # task version
     ---
     -> equipment.Hardware.proj(task_controller_hardware = 'hardware')
     -> equipment.Software.proj(task_controller_software = 'software', task_controller_software_version = 'software_version')
@@ -24,9 +25,9 @@ class Task(dj.Lookup):
     """
     
     contents = [
-        ['pacman',     'Speedgoat', 'Simulink', '', 'Psychtoolbox', '3.0', ''],
-        ['two target', 'Speedgoat', 'Simulink', '', 'Unity 3D',     '',    ''],
-        ['reaching',   'Speedgoat', 'Simulink', '', 'Psychtoolbox', '3.0', ''],
+        ['pacman',     '1.0', 'Speedgoat', 'Simulink', '', 'Psychtoolbox', '3.0', '1-dimensional force tracking'],
+        ['two target', '1.0', 'Speedgoat', 'Simulink', '', 'Unity 3D',     '',    ''],
+        ['reaching',   '1.0', 'Speedgoat', 'Simulink', '', 'Psychtoolbox', '3.0', ''],
     ]
 
 # -------------------------------------------------------------------------------------------------------------------------------
@@ -55,7 +56,6 @@ class Session(dj.Manual):
         definition = """
         -> master
         -> lab.User
-        ---
         """
 
     class Notes(dj.Part):
@@ -123,51 +123,54 @@ class Session(dj.Manual):
             # get all dates from directory list
             session_dates = [d for d in raw_dir if re.search(r'\d{4}-\d{2}-\d{2}',d) is not None]
 
+        # filter session dates by those not in table
+        session_dates = [date for date in session_dates if not self & {'session_date': date}]
+
         for date in session_dates:
 
             session_path = raw_path + date + '/'
             session_files = os.listdir(session_path)
 
-            # ensure session data not already in database
-            if not self & {'session_date': date}:
+            # ensure behavior directory exists
+            try:
+                if task_controller_hardware == 'Speedgoat':
+                    behavior_dir = 'speedgoat'
 
-                # ensure behavior directory exists
+                next(filter(lambda x: x==behavior_dir, session_files))
+
+            except StopIteration:
+                print('Missing behavior files for session {}'.format(date))
+
+            else:         
+                # ensure ephys directory exists
                 try:
-                    if task_controller_hardware == 'Speedgoat':
-                        behavior_dir = 'speedgoat'
+                    if neural_signal_processor == 'Cerebus': # will add IMEC for new probes
+                        ephys_dir = 'blackrock'
 
-                    next(filter(lambda x: x==behavior_dir, session_files))
+                    next(filter(lambda x: x==ephys_dir, session_files))
+
                 except StopIteration:
-                    print('Missing behavior files for session {}'.format(date))
-                else:         
+                    print('Missing ephys files for session {}'.format(date))
+                    
+                else:
+                    # insert session
+                    self.insert1((date, monkey, rig, task))
 
-                    # ensure ephys directory exists
+                    # insert notes
                     try:
-                        if neural_signal_processor == 'Cerebus': # will add IMEC for new probes
-                            ephys_dir = 'blackrock'
-
-                        next(filter(lambda x: x==ephys_dir, session_files))
+                        notes_files = next(x for x in session_files if re.search('.*notes\.txt',x))
                     except StopIteration:
-                        print('Missing ephys files for session {}'.format(date))
+                        print('Missing notes for session {}'.format(date))
                     else:
-                        # insert session
-                        self.insert1((date, monkey, rig, task))
+                        with open(session_path + notes_files,'r') as f:
+                            self.Notes.insert1((date, monkey, 0, f.read()))
 
-                        # insert notes
-                        try:
-                            notes_files = next(x for x in session_files if re.search('.*notes\.txt',x))
-                        except StopIteration:
-                            print('Missing notes for session {}'.format(date))
-                        else:
-                            with open(session_path + notes_files,'r') as f:
-                                self.Notes.insert1((date, monkey, 0, f.read()))
-
-                        # insert neural signal processor
-                        self.Hardware.insert1(dict(
-                            session_date=date,
-                            monkey=monkey,
-                            **(equipment.Hardware & {'hardware': neural_signal_processor}).fetch1('KEY')
-                            ))
+                    # insert neural signal processor
+                    self.Hardware.insert1(dict(
+                        session_date=date,
+                        monkey=monkey,
+                        **(equipment.Hardware & {'hardware': neural_signal_processor}).fetch1('KEY')
+                        ))
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 2

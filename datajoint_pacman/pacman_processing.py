@@ -8,11 +8,22 @@ from datetime import datetime
 schema = dj.schema('churchland_analyses_pacman_processing')
 
 @schema
-class AlignmentState(dj.Lookup):
+class AlignmentState(dj.Manual):
     definition = """
     # Task state IDs used to align trials
+    -> pacman_acquisition.Behavior
     -> pacman_acquisition.TaskState
     """
+    
+    @classmethod
+    def populate(self, session_rel=acquisition.Session, task_state='InTarget'):
+
+        # get key for task state
+        task_state_key = (pacman_acquisition.TaskState & {'task_state_name':task_state}).fetch1('KEY')
+
+        # insert task state for every session
+        for behavior_key in (pacman_acquisition.Behavior & session_rel).fetch('KEY'):
+            self.insert1(dict(**behavior_key, **task_state_key), skip_duplicates=True)
 
 @schema
 class EphysTrialStart(dj.Imported):

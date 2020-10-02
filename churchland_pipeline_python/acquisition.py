@@ -1,5 +1,5 @@
 import datajoint as dj
-import re
+import re, os
 from . import lab, equipment, reference
 from brpylib import NsxFile, brpylib_ver
 from collections import ChainMap
@@ -43,6 +43,8 @@ class Session(dj.Manual):
     ---
     -> lab.Rig
     -> Task
+    session_problem = 0: bool
+    session_problem_description = null: varchar(255) # (e.g. corrupted data)
     """
 
     class Hardware(dj.Part):
@@ -83,14 +85,6 @@ class Session(dj.Manual):
         save_tag_notes: varchar(4095) # notes for the save tag
         """
         
-    class Problem(dj.Part):
-        definition = """
-        # Problem with specified session
-        -> master
-        ---
-        problem_cause: varchar(255) # (e.g. corrupted data)
-        """
-        
     @classmethod
     def getrawpath(self, monkey, rig, task):
         """
@@ -105,9 +99,19 @@ class Session(dj.Manual):
     def populate(self,
         monkey, 
         rig, 
-        task, 
+        task,
+        task_version=[],
         dates=[],
         neural_signal_processor='Cerebus'):
+
+        # ensure task fully specified
+        if not task_version:
+            task_rel = Task & {'task':task}
+            assert len(task_rel)==1, 'Unspecified task version'
+        else:
+            task_rel = Task & {'task':task, 'task_version':task_version}
+
+        task_key = task_rel.fetch1('KEY')
 
         # fetch task controller
         task_controller_hardware = (Task & {'task': task}).fetch1('task_controller_hardware')
@@ -154,7 +158,8 @@ class Session(dj.Manual):
                     
                 else:
                     # insert session
-                    self.insert1((date, monkey, rig, task))
+                    session_key = dict(**task_key, session_date=date, monkey=monkey, rig=rig)
+                    self.insert1(session_key)
 
                     # insert notes
                     try:
@@ -187,6 +192,8 @@ class EphysRecording(dj.Imported):
     ephys_sample_rate: smallint unsigned # sampling rate for ephys data  [Hz]
     ephys_duration: double # recording duration [sec]
     """
+
+    key_source = Session - 'session_problem'
 
     class Channel(dj.Part):
         definition = """
@@ -271,6 +278,8 @@ class BehaviorRecording(dj.Imported):
     behavior_summary_file_path: varchar(1012) # path to summary file (temporary)
     behavior_sample_rate = 1e3: smallint unsigned # sampling rate for behavioral data [Hz]
     """
+
+    key_source = Session - 'session_problem'
     
     def make(self, key):
         

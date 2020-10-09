@@ -1,7 +1,10 @@
 import datajoint as dj
+import re, inspect
 from . import acquisition, equipment
-from .utilities import datasync
+from .utilities import datasync, datajointutils as dju
 from brpylib import NsxFile, brpylib_ver
+import math, numpy as np
+from scipy import signal
 
 schema = dj.schema('churchland_analyses_processing')
 
@@ -13,9 +16,7 @@ schema = dj.schema('churchland_analyses_processing')
 class Filter(dj.Lookup):
     definition = """
     # Filter bank
-    filter_name: varchar(16) # filter class (e.g. Butterworth)
-    filter_id: smallint unsigned # unique filter identifier
-    ---
+    filter_id: int unsigned # unique filter identifier
     """
     
     class Beta(dj.Part):
@@ -23,35 +24,183 @@ class Filter(dj.Lookup):
         # Beta kernel
         -> master
         ---
-        duration: decimal(5,3) # interval kernel is defined over [seconds]
-        alpha: decimal(5,3) # shape parameter
-        beta: decimal(5,3) # shape parameter
-        """
+        duration = 0.275: float # interval kernel is defined over [seconds]
+        alpha = 3: float # shape parameter
+        beta = 5: float # shape parameter
+        """ 
+
+        def filter(self, y, fs, axis=0, normalize=False):
+
+            assert len(self) == 1, 'Specify one filter'
+
+            # convert parameters based on sample rate
+            precision = int(np.ceil(np.log10(fs)))
+            x = np.arange(0, self.fetch1('duration'), 1/fs).round(precision)
+
+            # impulse response
+            a = self.fetch1('alpha')
+            b = self.fetch1('beta')
+            B = (math.gamma(a)*math.gamma(b))/math.gamma(a+b)
+            fx = (x**(a-1) * (1-x)**(b-1))/B
+
+            # filter input
+            z = signal.fftconvolve(y, fx, mode='same', axes=axis)
+
+            # normalize by magnitude of impule response
+            if normalize:
+                z /= fx.max()
+
+            return z
         
     class Boxcar(dj.Part):
         definition = """
         -> master
         ---
-        duration: decimal(5,3) # filter duration [seconds]
+        duration = 0.1: float # filter duration [seconds]
         """
+
+        def filter(self, y, fs, axis=0, normalize=False):
+
+            assert len(self) == 1, 'Specify one filter'
+
+            # convert parameters based on sample rate
+            wid = int(round(fs * self.fetch1('duration')))
+            half_wid = int(np.ceil(wid/2))
+
+            # impulse response
+            fx = np.concatenate((np.zeros(half_wid), np.ones(wid), np.zeros(half_wid)))
+
+            # filter input
+            z = signal.fftconvolve(y, fx, mode='same', axes=axis)
+
+            # normalize by magnitude of impule response
+            if normalize:
+                z /= fx.max()
+
+            return z
     
     class Butterworth(dj.Part):
         definition = """
         -> master
         ---
-        order: tinyint unsigned # filter order
-        low_cut = null: smallint unsigned # low-cut frequency [Hz]
+        order = 2: tinyint unsigned # filter order
+        low_cut = 500: smallint unsigned # low-cut frequency [Hz]
         high_cut = null: smallint unsigned # high-cut frequency [Hz]
         """
+
+        def filter(self, y, fs, axis=0):
+
+            assert len(self) == 1, 'Specify one filter'
+
+            # parse inputs
+            n, low_cut, high_cut = self.fetch1('order','low_cut','high_cut')
+            
+            assert low_cut or high_cut, 'Missing critical frequency or frequencies'
+
+            if low_cut and high_cut:
+                btype = 'bandpass'
+                Wn = [low_cut, high_cut]
+
+            elif low_cut and not high_cut:
+                btype = 'highpass'
+                Wn = low_cut
+
+            else:
+                btype = 'lowpass'
+                Wn = high_cut
+
+            # get second order sections
+            sos = signal.butter(n, Wn, btype, fs=fs, output='sos')
+
+            # filter input
+            z = signal.sosfilt(sos, y, axis=axis)
+
+            return z            
         
     class Gaussian(dj.Part):
         definition = """
         # Gaussian kernel
         -> master
         ---
-        sd: decimal(7,6) # filter standard deviation [seconds]
-        width: tinyint unsigned # filter width [multiples of standard deviations]
+        sd = 25e-3: float # filter standard deviation [seconds]
+        width = 4: tinyint unsigned # filter width [multiples of standard deviations]
         """
+
+        def filter(self, y, fs, axis=0, normalize=False):
+
+            assert len(self) == 1, 'Specify one filter'
+
+            # convert parameters based on sample rate
+            sd = fs * self.fetch1('sd')
+            wid = round(sd * self.fetch1('width'))
+
+            # impulse response
+            x = np.arange(-wid,wid)
+            fx = 1/(sd*np.sqrt(2*np.pi)) * np.exp(-x**2/(2*sd**2))
+
+            # filter input
+            z = signal.fftconvolve(y, fx, mode='same', axes=axis)
+
+            # normalize by magnitude of impule response
+            if normalize:
+                z /= fx.max()
+
+            return z
+
+    # easy insert
+    @classmethod
+    def ezinsert(self, ftype, **kwargs):
+
+        try:
+            # filter part table
+            filter_part = getattr(self, ftype)
+
+            # read part table secondary attributes
+            attributes = inspect.getmembers(filter_part, lambda a:not(inspect.isroutine(a)))
+            table_def = [a for a in attributes if a[0].startswith('definition')][0][-1]
+            table_def_lines = [s.lstrip() for s in table_def.split('\n')]
+
+            attr_name = re.compile('\w+')
+            attr_default = re.compile('\w+\s*=\s*(.):')
+            part_attr = {attr_name.match(s).group(0) : (float(attr_default.match(s).group(1)) if attr_default.match(s) else np.nan) \
+                for s in table_def_lines if attr_name.match(s)}
+
+            # ensure keyword keys are members of secondary attributes list
+            assert set(kwargs.keys()).issubset(set(part_attr.keys())), 'Unrecognized keyword argument(s)'
+
+            # check if entry already exists in table
+            if filter_part():
+
+                # append default values if missing
+                for key,val in part_attr.items():
+                    if key not in kwargs.keys():
+                        kwargs.update({key:val})
+
+                # existing entries
+                filters = filter_part.fetch(as_dict=True)
+                filter_attr = [{k:v for k,v in filt.items() if k!='filter_id'} for filt in filters]
+                
+                # cross reference
+                assert not any([kwargs == filt for filt in filter_attr]), 'Duplicate entry!'
+
+            # get next filter ID
+            if not(filter_part()):
+                new_id = 0
+            else:
+                all_id = filter_part.fetch('filter_id')
+                new_id = next(i for i in range(2+max(all_id)) if i not in all_id)
+
+            filter_key = {'filter_id': new_id}
+
+            # insert filter ID to master table
+            if not self & filter_key:
+                self.insert1(filter_key)
+
+            # insert filter to part table
+            filter_part.insert1(dict(**filter_key, **kwargs))
+
+        except AttributeError:
+            print('Unrecognized filter type: {}'.format(ftype))
         
 @schema
 class SyncBlock(dj.Imported):

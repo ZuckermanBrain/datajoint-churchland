@@ -60,8 +60,11 @@ def readtrialparams(file_path):
     keys = re.findall(';(.*?):=',paramStr)
     vals = re.findall(':=(.*?);',paramStr)
 
+    # matrix string pattern
+    matstr = re.compile(r'(-?)(\[)(.*)(\])')
+
     # evaluate strings as numeric
-    vals = [eval(re.search('(\[)(.*)(\])',x).group(2)) for x in vals]
+    vals = [eval(matstr.search(x).group(1) + matstr.search(x).group(3)) for x in vals]
 
     # create parameter dictionary
     params = dict(zip(keys,vals))

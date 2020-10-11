@@ -35,11 +35,11 @@ class Filter(dj.Lookup):
 
             # convert parameters based on sample rate
             precision = int(np.ceil(np.log10(fs)))
-            x = np.arange(0, self.fetch1('duration'), 1/fs).round(precision)
+            x = np.arange(0, float(self.fetch1('duration')), 1/fs).round(precision)
 
             # impulse response
-            a = self.fetch1('alpha')
-            b = self.fetch1('beta')
+            a = float(self.fetch1('alpha'))
+            b = float(self.fetch1('beta'))
             B = (math.gamma(a)*math.gamma(b))/math.gamma(a+b)
             fx = (x**(a-1) * (1-x)**(b-1))/B
 
@@ -64,7 +64,7 @@ class Filter(dj.Lookup):
             assert len(self) == 1, 'Specify one filter'
 
             # convert parameters based on sample rate
-            wid = int(round(fs * self.fetch1('duration')))
+            wid = int(round(fs * float(self.fetch1('duration'))))
             half_wid = int(np.ceil(wid/2))
 
             # impulse response
@@ -131,7 +131,7 @@ class Filter(dj.Lookup):
             assert len(self) == 1, 'Specify one filter'
 
             # convert parameters based on sample rate
-            sd = fs * self.fetch1('sd')
+            sd = fs * float(self.fetch1('sd'))
             wid = round(sd * self.fetch1('width'))
 
             # impulse response

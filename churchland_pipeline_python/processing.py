@@ -24,9 +24,9 @@ class Filter(dj.Lookup):
         # Beta kernel
         -> master
         ---
-        duration = 0.275: float # interval kernel is defined over [seconds]
-        alpha = 3: float # shape parameter
-        beta = 5: float # shape parameter
+        duration = 0.275: decimal(5,5) unsigned # interval kernel is defined over (s)
+        alpha = 3: decimal(5,4) unsigned # shape parameter
+        beta = 5: decimal(5,4) unsigned # shape parameter
         """ 
 
         def filter(self, y, fs, axis=0, normalize=False):
@@ -56,7 +56,7 @@ class Filter(dj.Lookup):
         definition = """
         -> master
         ---
-        duration = 0.1: float # filter duration [seconds]
+        duration = 0.1: decimal(18,9) unsigned # filter duration (s)
         """
 
         def filter(self, y, fs, axis=0, normalize=False):
@@ -84,8 +84,8 @@ class Filter(dj.Lookup):
         -> master
         ---
         order = 2: tinyint unsigned # filter order
-        low_cut = 500: smallint unsigned # low-cut frequency [Hz]
-        high_cut = null: smallint unsigned # high-cut frequency [Hz]
+        low_cut = 500: smallint unsigned # low-cut frequency (Hz)
+        high_cut = null: smallint unsigned # high-cut frequency (Hz)
         """
 
         def filter(self, y, fs, axis=0):
@@ -122,8 +122,8 @@ class Filter(dj.Lookup):
         # Gaussian kernel
         -> master
         ---
-        sd = 25e-3: float # filter standard deviation [seconds]
-        width = 4: tinyint unsigned # filter width [multiples of standard deviations]
+        sd = 25e-3: decimal(18,9) unsigned # filter standard deviation (s)
+        width = 4: tinyint unsigned # filter width (multiples of standard deviations)
         """
 
         def filter(self, y, fs, axis=0, normalize=False):
@@ -161,7 +161,7 @@ class Filter(dj.Lookup):
             table_def_lines = [s.lstrip() for s in table_def.split('\n')]
 
             attr_name = re.compile('\w+')
-            attr_default = re.compile('\w+\s*=\s*(.):')
+            attr_default = re.compile('\w+\s*=\s*(.*):')
             part_attr = {attr_name.match(s).group(0) : (float(attr_default.match(s).group(1)) if attr_default.match(s) else np.nan) \
                 for s in table_def_lines if attr_name.match(s)}
 
@@ -178,7 +178,7 @@ class Filter(dj.Lookup):
 
                 # existing entries
                 filters = filter_part.fetch(as_dict=True)
-                filter_attr = [{k:v for k,v in filt.items() if k!='filter_id'} for filt in filters]
+                filter_attr = [{k:float(v) for k,v in filt.items() if k!='filter_id'} for filt in filters]
                 
                 # cross reference
                 assert not any([kwargs == filt for filt in filter_attr]), 'Duplicate entry!'

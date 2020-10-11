@@ -1,5 +1,6 @@
 import datajoint as dj
-from churchland_pipeline_python import lab, acquisition, processing
+import numpy as np
+from churchland_pipeline_python import lab, acquisition, processing, equipment
 from churchland_pipeline_python.utilities import datasync
 from . import pacman_acquisition
 from brpylib import NsxFile, brpylib_ver
@@ -8,22 +9,42 @@ from datetime import datetime
 schema = dj.schema('churchland_analyses_pacman_processing')
 
 @schema
-class AlignmentState(dj.Manual):
+class AlignmentParams(dj.Manual):
     definition = """
     # Task state IDs used to align trials
     -> pacman_acquisition.Behavior
+    alignment_params_id: tinyint unsigned
+    ---
     -> pacman_acquisition.TaskState
+    alignment_max_lag = 0.2: decimal(4,3) # maximum allowable lag (s)
     """
     
     @classmethod
-    def populate(self, session_rel=acquisition.Session, task_state='InTarget'):
+    def populate(self, session_rel=acquisition.Session, task_state='InTarget', max_lag=0.2):
 
         # get key for task state
         task_state_key = (pacman_acquisition.TaskState & {'task_state_name':task_state}).fetch1('KEY')
 
         # insert task state for every session
         for behavior_key in (pacman_acquisition.Behavior & session_rel).fetch('KEY'):
-            self.insert1(dict(**behavior_key, **task_state_key), skip_duplicates=True)
+
+            # alignment parameters
+            align_params = dict(**behavior_key, **task_state_key, alignment_max_lag=max_lag)
+
+            # skip if parameters in table
+            if not self & align_params:
+
+                if not self & behavior_key:
+
+                    # set params ID to 0 if no entries for the session
+                    align_params.update(alignment_params_id=0)
+                else:
+                    # set params ID to next unfilled index for the session
+                    all_params_id = (self & behavior_key).fetch('alignment_params_id')
+                    new_params_id = next(i for i in range(2+max(all_params_id)) if i not in all_params_id)
+                    align_params.update(alignment_params_id=new_params_id)
+
+                self.insert1(align_params)
 
 @schema
 class EphysTrialStart(dj.Imported):
@@ -105,13 +126,97 @@ class TrialAlignment(dj.Computed):
     definition = """
     # Trial alignment indices for behavior and ephys data 
     -> EphysTrialStart
-    -> AlignmentState
+    -> AlignmentParams
     ---
     behavior_alignment: longblob # alignment indices for Speedgoat data
     ephys_alignment: longblob # alignment indices for Ephys data
     """
+    
+    # restrict to trials with a defined start index
+    key_source = ((EphysTrialStart & 'ephys_trial_start') & (pacman_acquisition.Behavior.Trial & 'successful_trial')) \
+        * AlignmentParams
 
-    key_source = EphysTrialStart & 'successful_trial'
+    def make(self, key):
+
+        # trial table
+        trial_rel = pacman_acquisition.Behavior.Trial & key
+
+        # fetch all parameters from key source
+        full_key = (self.key_source & key).fetch1()
+
+        # load cell parameters
+        load_cell_rel = (acquisition.Session.Hardware & key & {'hardware':'5lb Load Cell'}) * equipment.Hardware.Parameter
+        load_cell_capacity = (load_cell_rel & {'parameter':'force capacity'}).fetch1('parameter_value')
+        load_cell_output = (load_cell_rel & {'parameter':'voltage output'}).fetch1('parameter_value')
+
+        # convert load cell capacity from Volts to Newtons
+        load_cell_capacity *= 4.44822
+
+        # 25 ms Gaussian filter
+        gauss_filt = processing.Filter.Gaussian & {'sd':25e-3, 'width':4}
+
+        # set alignment index
+        if pacman_acquisition.ConditionParams.Stim & trial_rel:
+
+            # align to stimulation
+            stim = trial_rel.fetch1('stim')
+            align_idx = next(i for i in range(len(stim)) if stim[i])
+
+        else:
+            # align to task state
+            task_state = trial_rel.fetch1('task_state')
+            align_idx = next(i for i in range(len(task_state)) if task_state[i] == full_key['task_state_id'])
+
+        # behavioral sample rate
+        fs_beh = (acquisition.BehaviorRecording & key).fetch1('behavior_sample_rate')
+
+        # fetch target force and time
+        t, target_force = (pacman_acquisition.Behavior.Condition & trial_rel).fetch1('condition_time', 'condition_force')
+        zero_idx = next(i for i in range(len(t)) if t[i]>=0)
+
+        # phase correct dynamic conditions
+        if not pacman_acquisition.ConditionParams.Static & trial_rel:
+
+            # generate lag range
+            max_lag = float(full_key['alignment_max_lag'])
+            max_lag_samp = int(round(fs_beh * max_lag))
+            lags = range(-max_lag_samp, 1+max_lag_samp)
+
+            # truncate time indices  
+            precision = int(np.log10(fs_beh))
+            trunc_idx = np.nonzero((t>=round(t[0]+max_lag, precision)) & (t<=round(t[-1]-max_lag, precision)))[0]
+            target_force = target_force[trunc_idx]
+            align_idx_trunc = trunc_idx - zero_idx
+
+            # fetch force data
+            force_raw_online = trial_rel.fetch1('force_raw_online')
+            force_max, force_offset = (pacman_acquisition.ConditionParams.Force & trial_rel).fetch1('force_max','force_offset')
+
+            # function to convert force from Volts to Newtons
+            convertforce = lambda frc: force_max * (frc/load_cell_output * load_cell_capacity/force_max - float(force_offset))
+
+            # compute normalized mean squared error for each lag
+            nmse = -np.inf*np.ones(1+2*max_lag_samp)
+            for idx, lag in enumerate(lags):
+                if (align_idx+lag+align_idx_trunc[-1]) < len(force_raw_online):
+                    force_filt = gauss_filt.filter(convertforce(force_raw_online[align_idx+lag+align_idx_trunc]), fs_beh)
+                    nmse[idx] = 1 - np.sqrt(np.mean((force_filt-target_force)**2)/np.var(target_force))
+
+            # shift alignment indices by optimal lag
+            align_idx += lags[np.argmax(nmse)]
+
+        # behavior alignment indices
+        behavior_alignment = np.array(range(len(t))) + align_idx - zero_idx
+        key.update(behavior_alignment=behavior_alignment)
+
+        # ephys alignment indices
+        fs_ephys = (acquisition.EphysRecording & key).fetch1('ephys_sample_rate')
+        ephys_alignment = np.round(fs_ephys * np.arange(t[0], t[-1]+1/fs_beh, 1/fs_ephys)) + (align_idx - zero_idx) * int(fs_ephys/fs_beh)
+        ephys_alignment += (EphysTrialStart & key).fetch1('ephys_trial_start')
+        ephys_alignment = ephys_alignment.astype(int)
+        key.update(ephys_alignment=ephys_alignment)
+
+        self.insert1(key)
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 3

@@ -12,6 +12,33 @@ import inspect
 from itertools import chain
 from functools import reduce
 
+def getcontext(table):
+    """Identifies table context
+
+    Args:
+        table (datajoint.user_tables.OrderedClass): DataJoint table
+
+    Returns:
+        context (frame): Table context
+    """
+
+    # inspect table members
+    attributes = inspect.getmembers(table, lambda a:not(inspect.isroutine(a)))
+
+    # full table name
+    table_name = [a for a in attributes if a[0].startswith('full_table_name')][0][-1]
+
+    # check stack for table context
+    for frame in inspect.stack():
+        try:
+            eval(dj.table.lookup_class_name(table_name, frame[0].f_globals), frame[0].f_globals)
+        except TypeError:
+            pass
+        else:
+            context = frame[0]
+
+    return context
+
 def getchildren(table, context=[]):
     """Gets children of a table.
 
@@ -23,10 +50,18 @@ def getchildren(table, context=[]):
         children (list): Child tables
     """
 
+    # get table context
+    if not context:
+        context = getcontext(table)
+
+    # get child names
     graph = table.connection.dependencies
     graph.load()
     child_names = list(graph.children(table.full_table_name).keys())
-    children = gettables(child_names, context=context)
+
+    # get child tables
+    children = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in child_names]
+
     return children
 
 def getparents(table, context=[]):
@@ -40,35 +75,19 @@ def getparents(table, context=[]):
         parents (list): Parent tables
     """
 
+    # get table context
+    if not context:
+        context = getcontext(table)
+
+    # get parent names
     graph = table.connection.dependencies
     graph.load()
     parent_names = list(graph.parents(table.full_table_name).keys())
-    parents = gettables(parent_names, context=context)
+
+    # get parent tables
+    parents = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in parent_names]
+
     return parents
-
-def gettables(names, context=[]):
-    """Gets tables from a list of names.
-
-    Args:
-        names (list): Strings of table names
-        context (frame, optional): Frame used to evaluate table names. Defaults to [].
-
-    Returns:
-        tables (list): DataJoint tables
-    """
-
-    if context:
-        tables = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in names]
-    else:
-        for frame in inspect.stack():
-            try:
-                eval(dj.table.lookup_class_name(names[0], frame[0].f_globals), frame[0].f_globals)
-            except TypeError:
-                pass
-            else:
-                tables = [eval(dj.table.lookup_class_name(x, frame[0].f_globals), frame[0].f_globals) for x in names]
-    
-    return tables
 
 def nextkey(table, index=0):
     """Gets the next (unpopulated) key for a table.
@@ -100,6 +119,10 @@ def joinparts(master, key={}, depth=1, context=[]):
         joined_table (datajoint.user_tables.OrderedClass): Joined table
         part_tables (list): DataJoint tables included in the join
     """
+
+    # get master context
+    if not context:
+        context = getcontext(master)
     
     parts = dict.fromkeys(range(1+depth),[])
     for layer in range(1+depth):

@@ -1,5 +1,5 @@
 import datajoint as dj
-from churchland_pipeline_python import lab, acquisition, equipment, reference
+from churchland_pipeline_python import lab, acquisition, equipment, reference, processing
 from churchland_pipeline_python.utilities import speedgoat, datajointutils as dju
 import os, re, inspect
 import numpy as np
@@ -75,7 +75,7 @@ class ConditionParams(dj.Lookup):
         target_id: smallint unsigned # ID number
         ---
         target_duration: decimal(5,4) # target duration (s)
-        target_offset: decimal(5,4) # offset from baseline [proportion playable window]
+        target_offset: decimal(5,4) # offset from baseline (proportion playable window)
         target_pad: decimal(5,4) # duration of "padding" dots leading into and out of target (s)
         """
         
@@ -90,7 +90,7 @@ class ConditionParams(dj.Lookup):
         # Linear ramp force profile parameters
         -> master.Target
         ---
-        target_amplitude: decimal(5,4) # target amplitude [proportion playable window]
+        target_amplitude: decimal(5,4) # target amplitude (proportion playable window)
         """
         
     class Sine(dj.Part):
@@ -98,8 +98,8 @@ class ConditionParams(dj.Lookup):
         # Sinusoidal (single-frequency) force profile parameters
         -> master.Target
         ---
-        target_amplitude: decimal(5,4) # target amplitude [proportion playable window]
-        target_frequency: decimal(5,4) # sinusoid frequency [Hz]
+        target_amplitude: decimal(5,4) # target amplitude (proportion playable window)
+        target_frequency: decimal(5,4) # sinusoid frequency (Hz)
         """
         
     class Chirp(dj.Part):
@@ -107,9 +107,9 @@ class ConditionParams(dj.Lookup):
         # Chirp force profile parameters
         -> master.Target
         ---
-        target_amplitude: decimal(5,4) # target amplitude [proportion playable window]
-        target_frequency_init: decimal(5,4) # initial frequency [Hz]
-        target_frequency_final: decimal(5,4) # final frequency [Hz]
+        target_amplitude: decimal(5,4) # target amplitude (proportion playable window)
+        target_frequency_init: decimal(5,4) # initial frequency (Hz)
+        target_frequency_final: decimal(5,4) # final frequency (Hz)
         """
         
     @classmethod
@@ -296,6 +296,53 @@ class Behavior(dj.Imported):
         photobox: longblob # photobox signal
         stim = null: longblob # TTL signal indicating the delivery of a stim pulse
         """
+
+        def processforce(self, data_type='raw', filter=True):
+
+            # ensure one session
+            session_key = (acquisition.Session & self).fetch('KEY')
+            assert len(session_key)==1, 'Specify one acquisition session'
+            
+            # load cell parameters
+            load_cell_rel = (acquisition.Session.Hardware & session_key & {'hardware':'5lb Load Cell'}) * equipment.Hardware.Parameter
+            load_cell_capacity = (load_cell_rel & {'parameter':'force capacity'}).fetch1('parameter_value')
+            load_cell_output = (load_cell_rel & {'parameter':'voltage output'}).fetch1('parameter_value')
+
+            # convert load cell capacity from Volts to Newtons
+            lbs_per_N = 0.224809
+            load_cell_capacity /= lbs_per_N
+
+            # 25 ms Gaussian filter
+            filter_rel = processing.Filter.Gaussian & {'sd':25e-3, 'width':4}
+
+            # join trial force data with condition parameters
+            force_rel = self * ConditionParams.Force
+
+            # fetch force data
+            data_attr = {'raw':'force_raw_online', 'filt':'force_filt_online'}
+            data_attr = data_attr[data_type]
+            force_data = force_rel.fetch('force_max', 'force_offset', data_attr, as_dict=True)
+
+            # sample rate
+            fs = (acquisition.BehaviorRecording & self).fetch1('behavior_sample_rate')
+
+            # process trial data
+            for f in force_data:
+
+                # convert units
+                f[data_attr] = f['force_max'] * (f[data_attr]/load_cell_output * load_cell_capacity/f['force_max'] - float(f['force_offset']))
+
+                # filter
+                if filter:
+                    f[data_attr] = filter_rel.filter(f[data_attr], fs)
+
+            # limit output to force signal
+            force = [{k:v for k,v in f.items()} for f in force_data]
+
+            if len(force) == 1:
+                force = force[0][data_attr]
+
+            return force            
         
     def make(self, key):
 

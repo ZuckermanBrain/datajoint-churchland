@@ -1,7 +1,8 @@
 import datajoint as dj
 import numpy as np
+import itertools
 from churchland_pipeline_python import lab, acquisition, processing, equipment
-from churchland_pipeline_python.utilities import datasync
+from churchland_pipeline_python.utilities import datasync, datajointutils as dju
 from . import pacman_acquisition
 from brpylib import NsxFile, brpylib_ver
 from datetime import datetime
@@ -20,31 +21,33 @@ class AlignmentParams(dj.Manual):
     """
     
     @classmethod
-    def populate(self, session_rel=acquisition.Session, task_state='InTarget', max_lag=0.2):
+    def populate(self, 
+        behavior_rel: pacman_acquisition.Behavior=pacman_acquisition.Behavior(), 
+        task_state_rel: pacman_acquisition.TaskState=(pacman_acquisition.TaskState & {'task_state_name': 'InTarget'}), 
+        max_lag: int=0.2):
 
-        # get key for task state
-        task_state_key = (pacman_acquisition.TaskState & {'task_state_name':task_state}).fetch1('KEY')
+        # check inputs
+        assert isinstance(behavior_rel, pacman_acquisition.Behavior), 'Unrecognized behavior table'
+        assert isinstance(task_state_rel, pacman_acquisition.TaskState), 'Unrecognized task state table'
 
-        # insert task state for every session
-        for behavior_key in (pacman_acquisition.Behavior & session_rel).fetch('KEY'):
+        # construct "key source" from join of behavior and task state tables
+        key_source = (behavior_rel * task_state_rel) - (self & {'alignment_max_lag': max_lag})
 
-            # alignment parameters
-            align_params = dict(**behavior_key, **task_state_key, alignment_max_lag=max_lag)
+        behavior_source = behavior_rel & key_source.proj()
+        task_state_source = task_state_rel & key_source.proj()
 
-            # skip if parameters in table
-            if not self & align_params:
+        # insert task state for every behavior
+        for beh_key, task_state_key in itertools.product(behavior_source.fetch('KEY'), task_state_source.fetch('KEY')):
 
-                if not self & behavior_key:
+            # get filter params ID
+            if not self & beh_key:
+                new_param_id = 0
+            else:
+                all_param_id = (self & beh_key).fetch('alignment_params_id')
+                new_param_id = next(i for i in range(2+max(all_param_id)) if i not in all_param_id)
 
-                    # set params ID to 0 if no entries for the session
-                    align_params.update(alignment_params_id=0)
-                else:
-                    # set params ID to next unfilled index for the session
-                    all_params_id = (self & behavior_key).fetch('alignment_params_id')
-                    new_params_id = next(i for i in range(2+max(all_params_id)) if i not in all_params_id)
-                    align_params.update(alignment_params_id=new_params_id)
+            self.insert1(dict(**beh_key, alignment_params_id=new_param_id, **task_state_key, alignment_max_lag=max_lag))
 
-                self.insert1(align_params)
 
 @schema
 class EphysTrialStart(dj.Imported):
@@ -85,12 +88,43 @@ class EphysTrialStart(dj.Imported):
 
         self.insert(trial_keys)
 
+
 @schema
-class SpikeFilter(dj.Lookup):
+class FilterParams(dj.Manual):
     definition = """
-    # Set of filter parameters for smoothing spike trains
+    # Set of filter parameters for smoothing forces and spike trains
+    -> pacman_acquisition.Behavior.Condition
+    filter_params_id: tinyint unsigned
+    ---
     -> processing.Filter
     """
+
+    @classmethod
+    def populate(self,
+        condition_rel: pacman_acquisition.Behavior.Condition=pacman_acquisition.Behavior.Condition(), 
+        filter_rel=(processing.Filter.Gaussian & {'sd':25e-3,'width':4})):
+
+        # check inputs
+        assert isinstance(condition_rel, pacman_acquisition.Behavior.Condition), 'Unrecognized condition table'
+        assert filter_rel in dju.getchildren(processing.Filter), 'Unrecognized filter table'
+
+        # construct "key source" from join of condition and filter tables
+        key_source = (condition_rel * filter_rel) - self
+
+        cond_source = condition_rel & key_source.proj()
+        filt_source = filter_rel & key_source.proj()
+
+        # insert task state for every session
+        for cond_key, filt_key in itertools.product(cond_source.fetch('KEY'), filt_source.fetch('KEY')):
+
+            # get filter params ID
+            if not self & cond_key:
+                new_param_id = 0
+            else:
+                all_param_id = (self & cond_key).fetch('filter_params_id')
+                new_param_id = next(i for i in range(2+max(all_param_id)) if i not in all_param_id)
+
+            self.insert1(dict(**cond_key, filter_params_id=new_param_id, **filt_key))
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 2
@@ -103,9 +137,9 @@ class MotorUnitPsth(dj.Computed):
     -> processing.MotorUnit
     -> pacman_acquisition.Behavior.Condition
     -> pacman_acquisition.SessionBlock
+    -> FilterParams
     ---
     motor_unit_psth: longblob # psth
-    -> SpikeFilter
     """
 
 @schema
@@ -115,9 +149,9 @@ class NeuronPsth(dj.Computed):
     -> processing.Neuron
     -> pacman_acquisition.Behavior.Condition
     -> pacman_acquisition.SessionBlock
+    -> FilterParams
     ---
     neuron_psth: longblob # psth
-    -> SpikeFilter
     """
 
 @schema
@@ -221,6 +255,7 @@ class Force(dj.Computed):
     definition = """
     # Single trial force
     -> TrialAlignment
+    -> FilterParams
     ---
     force_raw = null: longblob # aligned raw (online) force [Volts]
     force_filt = null: longblob # offline filtered, aligned, and calibrated force [Newtons]
@@ -247,6 +282,7 @@ class Force(dj.Computed):
         key.update(force_raw=force_raw_align, force_filt=force_filt_align)
 
         self.insert1(key)
+
 
 @schema
 class MotorUnitSpikes(dj.Computed):
@@ -289,9 +325,9 @@ class MotorUnitRate(dj.Computed):
     definition = """
     # Aligned motor unit trial firing rate
     -> MotorUnitSpikes
+    -> FilterParams
     ---
     motor_unit_rate: longblob # trial-aligned firing rate [Hz]
-    -> SpikeFilter
     """
     
 @schema
@@ -299,9 +335,9 @@ class NeuronRate(dj.Computed):
     definition = """
     # Aligned neuron trial firing rate
     -> NeuronSpikes
+    -> FilterParams
     ---
     neuron_rate: longblob # trial-aligned firing rate [Hz]
-    -> SpikeFilter
     """
 
 # -------------------------------------------------------------------------------------------------------------------------------

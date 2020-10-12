@@ -85,7 +85,6 @@ class EphysTrialStart(dj.Imported):
 
         self.insert(trial_keys)
 
-
 @schema
 class SpikeFilter(dj.Lookup):
     definition = """
@@ -144,17 +143,6 @@ class TrialAlignment(dj.Computed):
         # fetch all parameters from key source
         full_key = (self.key_source & key).fetch1()
 
-        # load cell parameters
-        load_cell_rel = (acquisition.Session.Hardware & key & {'hardware':'5lb Load Cell'}) * equipment.Hardware.Parameter
-        load_cell_capacity = (load_cell_rel & {'parameter':'force capacity'}).fetch1('parameter_value')
-        load_cell_output = (load_cell_rel & {'parameter':'voltage output'}).fetch1('parameter_value')
-
-        # convert load cell capacity from Volts to Newtons
-        load_cell_capacity *= 4.44822
-
-        # 25 ms Gaussian filter
-        gauss_filt = processing.Filter.Gaussian & {'sd':25e-3, 'width':4}
-
         # set alignment index
         if pacman_acquisition.ConditionParams.Stim & trial_rel:
 
@@ -188,19 +176,15 @@ class TrialAlignment(dj.Computed):
             target_force = target_force[trunc_idx]
             align_idx_trunc = trunc_idx - zero_idx
 
-            # fetch force data
-            force_raw_online = trial_rel.fetch1('force_raw_online')
-            force_max, force_offset = (pacman_acquisition.ConditionParams.Force & trial_rel).fetch1('force_max','force_offset')
-
-            # function to convert force from Volts to Newtons
-            convertforce = lambda frc: force_max * (frc/load_cell_output * load_cell_capacity/force_max - float(force_offset))
+            # process force signal
+            force = trial_rel.processforce()
 
             # compute normalized mean squared error for each lag
             nmse = -np.inf*np.ones(1+2*max_lag_samp)
             for idx, lag in enumerate(lags):
-                if (align_idx+lag+align_idx_trunc[-1]) < len(force_raw_online):
-                    force_filt = gauss_filt.filter(convertforce(force_raw_online[align_idx+lag+align_idx_trunc]), fs_beh)
-                    nmse[idx] = 1 - np.sqrt(np.mean((force_filt-target_force)**2)/np.var(target_force))
+                if (align_idx+lag+align_idx_trunc[-1]) < len(force):
+                    force_align = force[align_idx+lag+align_idx_trunc]
+                    nmse[idx] = 1 - np.sqrt(np.mean((force_align-target_force)**2)/np.var(target_force))
 
             # shift alignment indices by optimal lag
             align_idx += lags[np.argmax(nmse)]
@@ -241,6 +225,28 @@ class Force(dj.Computed):
     force_raw = null: longblob # aligned raw (online) force [Volts]
     force_filt = null: longblob # offline filtered, aligned, and calibrated force [Newtons]
     """
+
+    def make(self, key):
+        
+        # trial alignment indices
+        beh_align = (TrialAlignment & key).fetch1('behavior_alignment')
+
+        # convert raw force signal to Newtons
+        trial_rel = pacman_acquisition.Behavior.Trial & key
+        force = trial_rel.processforce(data_type='raw',filter=False)
+
+        # align force signal
+        beh_align = (TrialAlignment & key).fetch1('behavior_alignment')
+        force_raw_align = force[beh_align]
+
+        # filter with 25 ms Gaussian
+        fs = (acquisition.BehaviorRecording & key).fetch1('behavior_sample_rate')
+        filter_rel = processing.Filter.Gaussian & {'sd':25e-3, 'width':4}
+        force_filt_align = filter_rel.filter(force_raw_align, fs)
+
+        key.update(force_raw=force_raw_align, force_filt=force_filt_align)
+
+        self.insert1(key)
 
 @schema
 class MotorUnitSpikes(dj.Computed):

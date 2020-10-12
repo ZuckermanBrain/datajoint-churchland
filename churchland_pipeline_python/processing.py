@@ -52,6 +52,7 @@ class Filter(dj.Lookup):
 
             return z
         
+
     class Boxcar(dj.Part):
         definition = """
         -> master
@@ -79,6 +80,7 @@ class Filter(dj.Lookup):
 
             return z
     
+
     class Butterworth(dj.Part):
         definition = """
         -> master
@@ -117,6 +119,7 @@ class Filter(dj.Lookup):
 
             return z            
         
+
     class Gaussian(dj.Part):
         definition = """
         # Gaussian kernel
@@ -147,60 +150,6 @@ class Filter(dj.Lookup):
 
             return z
 
-    # easy insert
-    @classmethod
-    def ezinsert(self, ftype, **kwargs):
-
-        try:
-            # filter part table
-            filter_part = getattr(self, ftype)
-
-            # read part table secondary attributes
-            attributes = inspect.getmembers(filter_part, lambda a:not(inspect.isroutine(a)))
-            table_def = [a for a in attributes if a[0].startswith('definition')][0][-1]
-            table_def_lines = [s.lstrip() for s in table_def.split('\n')]
-
-            attr_name = re.compile('\w+')
-            attr_default = re.compile('\w+\s*=\s*(.*):')
-            part_attr = {attr_name.match(s).group(0) : (float(attr_default.match(s).group(1)) if attr_default.match(s) else np.nan) \
-                for s in table_def_lines if attr_name.match(s)}
-
-            # ensure keyword keys are members of secondary attributes list
-            assert set(kwargs.keys()).issubset(set(part_attr.keys())), 'Unrecognized keyword argument(s)'
-
-            # check if entry already exists in table
-            if filter_part():
-
-                # append default values if missing
-                for key,val in part_attr.items():
-                    if key not in kwargs.keys():
-                        kwargs.update({key:val})
-
-                # existing entries
-                filters = filter_part.fetch(as_dict=True)
-                filter_attr = [{k:float(v) for k,v in filt.items() if k!='filter_id'} for filt in filters]
-                
-                # cross reference
-                assert not any([kwargs == filt for filt in filter_attr]), 'Duplicate entry!'
-
-            # get next filter ID
-            if not(filter_part()):
-                new_id = 0
-            else:
-                all_id = filter_part.fetch('filter_id')
-                new_id = next(i for i in range(2+max(all_id)) if i not in all_id)
-
-            filter_key = {'filter_id': new_id}
-
-            # insert filter ID to master table
-            if not self & filter_key:
-                self.insert1(filter_key)
-
-            # insert filter to part table
-            filter_part.insert1(dict(**filter_key, **kwargs))
-
-        except AttributeError:
-            print('Unrecognized filter type: {}'.format(ftype))
         
 @schema
 class SyncBlock(dj.Imported):
@@ -260,6 +209,7 @@ class MotorUnit(dj.Imported):
         ---
         motor_unit_template: longblob # waveform template
         """
+
 
 @schema
 class Neuron(dj.Imported):

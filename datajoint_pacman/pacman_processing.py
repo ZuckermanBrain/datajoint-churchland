@@ -265,9 +265,6 @@ class Force(dj.Computed):
     key_source = (TrialAlignment * FilterParams) & pacman_acquisition.Behavior.Trial
 
     def make(self, key):
-        
-        # trial alignment indices
-        beh_align = (TrialAlignment & key).fetch1('behavior_alignment')
 
         # convert raw force signal to Newtons
         trial_rel = pacman_acquisition.Behavior.Trial & key

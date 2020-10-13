@@ -3,6 +3,7 @@ import re, os
 from . import lab, equipment, reference
 from brpylib import NsxFile, brpylib_ver
 from collections import ChainMap
+from typing import List
 
 schema = dj.schema('churchland_common_acquisition') 
 #schema = dj.schema(dj.config.get('database.prefix','') + 'churchland_common_acquisition')
@@ -88,31 +89,34 @@ class Session(dj.Manual):
 
     @classmethod
     def populate(self,
-        monkey, 
-        rig, 
-        task,
-        task_version=[],
-        dates=[],
-        neural_signal_processor='Cerebus'):
+        monkey: lab.Monkey, 
+        rig: lab.Rig, 
+        task: Task,
+        dates: List[str]=[],
+        neural_signal_processor: equipment.Hardware=(equipment.Hardware & {'hardware':'Cerebus'})):
 
-        # ensure task fully specified
-        if not task_version:
-            task_rel = Task & {'task':task}
-            assert len(task_rel)==1, 'Unspecified task version'
-        else:
-            task_rel = Task & {'task':task, 'task_version':task_version}
+        # check inputs
+        for table in [monkey, rig, task]:
+            assert len(table) == 1, 'Limit table to one entry:\n\n{}'.format(table)
 
-        task_key = task_rel.fetch1('KEY')
+        assert isinstance(monkey, lab.Monkey), 'Unrecognized monkey table'
+        assert isinstance(rig,    lab.Rig),    'Unrecognized rig table'
+        assert isinstance(task,   Task),       'Unrecognized task table'
+        assert neural_signal_processor.fetch1('hardware_category') == 'neural signal processor', \
+            'Expected neural signal processor table entry. Got:\n\n{}'.format(neural_signal_processor)
 
-        # fetch task controller
-        task_controller_hardware = (Task & {'task': task}).fetch1('task_controller_hardware')
+        # fetch input keys
+        monkey_key = monkey.fetch1('KEY')
+        rig_key = rig.fetch1('KEY')
+        task_key = task.fetch1('KEY')
+        nsp_key = neural_signal_processor.fetch1('KEY')
 
         # find all directories in raw path
-        raw_path = self.getrawpath(monkey, rig, task)
+        raw_path = self.getrawpath(monkey_key['monkey'], rig_key['rig'], task_key['task'])
         raw_dir = sorted(list(os.listdir(raw_path)))
 
-        if len(dates) > 0:
-            # restrict dates based on input list
+        if dates:
+            # restrict dates based on user list
             session_dates = [d for d in raw_dir if d in dates]
         else:
             # get all dates from directory list
@@ -128,7 +132,7 @@ class Session(dj.Manual):
 
             # ensure behavior directory exists
             try:
-                if task_controller_hardware == 'Speedgoat':
+                if task & {'task_controller_hardware':'Speedgoat'}:
                     behavior_dir = 'speedgoat'
 
                 next(filter(lambda x: x==behavior_dir, session_files))
@@ -139,7 +143,7 @@ class Session(dj.Manual):
             else:         
                 # ensure ephys directory exists
                 try:
-                    if neural_signal_processor == 'Cerebus': # will add IMEC for new probes
+                    if nsp_key['hardware'] == 'Cerebus': # will add IMEC for new probes
                         ephys_dir = 'blackrock'
 
                     next(filter(lambda x: x==ephys_dir, session_files))
@@ -148,9 +152,11 @@ class Session(dj.Manual):
                     print('Missing ephys files for session {}'.format(date))
                     
                 else:
+                    # session key
+                    session_key = dict(session_date=date, **monkey_key)
+                    
                     # insert session
-                    session_key = dict(**task_key, session_date=date, monkey=monkey, rig=rig)
-                    self.insert1(session_key)
+                    self.insert1(dict(**session_key, **rig_key, **task_key))
 
                     # insert notes
                     try:
@@ -159,14 +165,10 @@ class Session(dj.Manual):
                         print('Missing notes for session {}'.format(date))
                     else:
                         with open(session_path + notes_files,'r') as f:
-                            self.Notes.insert1((date, monkey, 0, f.read()))
+                            self.Notes.insert1(dict(**session_key, session_notes_id=0, session_notes=f.read()))
 
                     # insert neural signal processor
-                    self.Hardware.insert1(dict(
-                        session_date=date,
-                        monkey=monkey,
-                        **(equipment.Hardware & {'hardware': neural_signal_processor}).fetch1('KEY')
-                        ))
+                    self.Hardware.insert1(dict(**session_key, **nsp_key))
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 2

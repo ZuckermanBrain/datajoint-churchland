@@ -1,6 +1,6 @@
 import datajoint as dj
 import numpy as np
-import itertools
+import itertools, inspect
 from churchland_pipeline_python import lab, acquisition, processing, equipment
 from churchland_pipeline_python.utilities import datasync, datajointutils as dju
 from . import pacman_acquisition
@@ -261,6 +261,9 @@ class Force(dj.Computed):
     force_filt = null: longblob # offline filtered, aligned, and calibrated force [Newtons]
     """
 
+    # restrict key source to actual condition/trial combinations  
+    key_source = (TrialAlignment * FilterParams) & pacman_acquisition.Behavior.Trial
+
     def make(self, key):
         
         # trial alignment indices
@@ -274,10 +277,15 @@ class Force(dj.Computed):
         beh_align = (TrialAlignment & key).fetch1('behavior_alignment')
         force_raw_align = force[beh_align]
 
-        # filter with 25 ms Gaussian
+        # get filter kernel
+        filter_id = (processing.Filter & key).fetch1('filter_id')
+        _, filter_parts = dju.joinparts(processing.Filter, {'filter_id': filter_id}, context=inspect.currentframe())
+        assert len(filter_parts) == 2, 'Filter ID associated with more than one kernel!'
+        filter_rel = next(filter(lambda x: x in dju.getchildren(processing.Filter, context=inspect.currentframe()), filter_parts))
+
+        # apply filter
         fs = (acquisition.BehaviorRecording & key).fetch1('behavior_sample_rate')
-        filter_rel = processing.Filter.Gaussian & {'sd':25e-3, 'width':4}
-        force_filt_align = filter_rel.filter(force_raw_align, fs)
+        force_filt_align = filter_rel().filter(force_raw_align, fs)
 
         key.update(force_raw=force_raw_align, force_filt=force_filt_align)
 

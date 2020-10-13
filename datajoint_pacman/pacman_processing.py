@@ -50,6 +50,22 @@ class AlignmentParams(dj.Manual):
 
 
 @schema
+class BehaviorBlock(dj.Manual):
+    definition = """
+    # Set of save tags and behavioral recording parameters for conducting analyses
+    -> pacman_acquisition.Behavior
+    behavior_block_id: tinyint unsigned # block ID
+    ---
+    -> pacman_acquisition.ArmPosture
+    """
+    
+    class SaveTag(dj.Part):
+        definition = """
+        -> master
+        -> pacman_acquisition.Behavior.SaveTag
+        """
+
+@schema
 class EphysTrialStart(dj.Imported):
     definition = """
     # Synchronizes continuous acquisition ephys data with behavior trials
@@ -136,7 +152,7 @@ class MotorUnitPsth(dj.Computed):
     # Peri-stimulus time histogram
     -> processing.MotorUnit
     -> pacman_acquisition.Behavior.Condition
-    -> pacman_acquisition.SessionBlock
+    -> BehaviorBlock
     -> FilterParams
     ---
     motor_unit_psth: longblob # psth
@@ -148,7 +164,7 @@ class NeuronPsth(dj.Computed):
     # Peri-stimulus time histogram
     -> processing.Neuron
     -> pacman_acquisition.Behavior.Condition
-    -> pacman_acquisition.SessionBlock
+    -> BehaviorBlock
     -> FilterParams
     ---
     neuron_psth: longblob # psth

@@ -268,6 +268,13 @@ class Behavior(dj.Imported):
     # Behavioral data imported from Speedgoat
     -> acquisition.BehaviorRecording
     """
+
+    class SaveTag(dj.Part):
+        definition = """
+        # Save tags and associated notes
+        -> master
+        save_tag: tinyint unsigned # save tag
+        """
     
     class Condition(dj.Part):
         definition = """
@@ -286,7 +293,7 @@ class Behavior(dj.Imported):
         trial_number: smallint unsigned # trial number (within session)
         ---
         -> Behavior.Condition
-        save_tag: tinyint unsigned # save tag
+        -> master.SaveTag
         successful_trial: bool
         simulation_time: longblob # absolute simulation time
         task_state: longblob # task state IDs
@@ -470,21 +477,3 @@ class Behavior(dj.Imported):
                     # insert trial data
                     trial_key = dict(**key, trial_number=trial, condition_id=cond_id, **data, save_tag=params['saveTag'])
                     self.Trial.insert1(trial_key)
-
-
-@schema
-class SessionBlock(dj.Manual):
-    definition = """
-    # Set of save tags and arm postures for conducting analyses
-    -> acquisition.Session
-    block_id: tinyint unsigned # block ID
-    ---
-    -> ArmPosture
-    """
-    
-    class SaveTag(dj.Part):
-        definition = """
-        # Block save tags
-        -> master
-        -> acquisition.Session.SaveTag
-        """

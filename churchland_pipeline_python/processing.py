@@ -13,6 +13,30 @@ schema = dj.schema('churchland_analyses_processing')
 # -------------------------------------------------------------------------------------------------------------------------------
 
 @schema
+class BrainSort(dj.Manual):
+    definition = """
+    # Spike sorted brain data
+    -> acquisition.BrainChannelGroup
+    brain_sort_id: tinyint unsigned
+    ---
+    -> equipment.Software
+    brain_sort_path: varchar(1012) # path to sort files
+    """
+
+
+@schema
+class EmgSort(dj.Manual):
+    definition = """
+    # Spike sorted EMG data
+    -> acquisition.EmgChannelGroup
+    emg_sort_id: tinyint unsigned
+    ---
+    -> equipment.Software
+    emg_sort_path: varchar(1012) # path to sort files
+    """
+
+
+@schema
 class Filter(dj.Lookup):
     definition = """
     # Filter bank
@@ -150,7 +174,7 @@ class Filter(dj.Lookup):
 
             return z
 
-        
+
 @schema
 class SyncBlock(dj.Imported):
     definition = """
@@ -195,6 +219,7 @@ class MotorUnit(dj.Imported):
     definition = """
     # Sorted motor unit
     -> acquisition.EmgChannelGroup
+    -> EmgSort
     motor_unit_id: smallint unsigned # unique unit ID
     ---
     -> equipment.Software
@@ -214,12 +239,12 @@ class MotorUnit(dj.Imported):
 @schema
 class Neuron(dj.Imported):
     definition = """
-    # Sorted neuron
-    -> acquisition.NeuralChannelGroup
+    # Sorted brain neuron
+    -> acquisition.BrainChannelGroup
+    -> BrainSort
     neuron_id: smallint unsigned # unique unit ID
     ---
-    -> equipment.Software
-    neuron_isolation: enum("single","multi") # neuron isolation quality (single- or multi-unit)
+    neuron_isolation: enum('single', 'multi') # neuron isolation quality (single- or multi-unit)
     neuron_session_spikes: longblob # array of spike indices
     """
         
@@ -227,7 +252,7 @@ class Neuron(dj.Imported):
         definition = """
         # Sorted spike templates
         -> master
-        -> acquisition.NeuralChannelGroup.Channel
+        -> acquisition.BrainChannelGroup.Channel
         ---
         neuron_template: longblob # waveform template
         """

@@ -312,10 +312,10 @@ class BrainChannelGroup(dj.Manual):
     definition = """
     -> EphysRecording
     -> reference.BrainRegion
-    -> equipment.ElectrodeArray.proj(brain_array_id = 'electrode_array_id')
+    -> equipment.ElectrodeArray
     brain_channel_group_id: tinyint unsigned
     ---
-    -> equipment.ElectrodeArrayConfig.proj(brain_array_config_id = 'electrode_array_config_id')
+    -> equipment.ElectrodeArrayConfig
     hemisphere: enum('left', 'right')         # brain hemisphere
     probe_depth = null: decimal(5,3)          # depth of probe electrode (mm)
     brain_channel_group_notes: varchar(4095) # notes for the channel set
@@ -336,10 +336,10 @@ class EmgChannelGroup(dj.Manual):
     definition = """
     -> EphysRecording
     -> reference.Muscle
-    -> equipment.ElectrodeArray.proj(emg_array_id = 'electrode_array_id')
+    -> equipment.ElectrodeArray
     emg_channel_group_id: tinyint unsigned
     ---
-    -> equipment.ElectrodeArrayConfig.proj(emg_array_config_id = 'electrode_array_config_id')
+    -> equipment.ElectrodeArrayConfig
     emg_channel_group_notes: varchar(4095) # notes for the channel set
     """
 

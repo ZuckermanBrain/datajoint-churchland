@@ -8,6 +8,7 @@ Coordinate system: x (left/right, onscreen); y (up/down, onscreen); z (into scre
 import datajoint as dj
 import numpy as np
 import re
+from decimal import Decimal
 from matplotlib import pyplot as plt, patches as patches
 from mpl_toolkits.mplot3d import Axes3D, art3d
 
@@ -35,6 +36,7 @@ class EquipmentCategory(dj.Lookup):
         ['task controller']
     ]
 
+
 @schema
 class Parameter(dj.Lookup):
     definition = """
@@ -48,20 +50,21 @@ class Parameter(dj.Lookup):
         ['voltage output', 'calibrated output signal (Volts)']
     ]
 
+
 @schema
 class ElectrodeGeometry(dj.Lookup):
     definition = """
     electrode_geometry_id: smallint unsigned # unique ID
     ---
-    electrode_base_x_length:              float                           # (m) length of base along x-axis
-    electrode_base_y_length:              float                           # (m) length of base along y-axis
-    electrode_base_z_length   = 0:        float                           # (m) length of base along z-axis
+    electrode_base_x_length:              decimal(9,9) unsigned           # (m) length of base along x-axis
+    electrode_base_y_length:              decimal(9,9) unsigned           # (m) length of base along y-axis
+    electrode_base_z_length   = 0:        decimal(9,9) unsigned           # (m) length of base along z-axis
     electrode_base_shape      = 'cuboid': enum('cuboid','cylinder')       # base shape
-    electrode_base_insulation = 0:        float                           # (m) insulation coverage, starting from base top
-    electrode_base_rotation   = 0:        float                           # (multiples of 2*pi) base rotation in x-y plane
-    electrode_tip_z_length    = 0:        float                           # (m) length of tip along z-axis
+    electrode_base_insulation = 0:        decimal(9,9) unsigned           # (m) insulation coverage, starting from base top
+    electrode_base_rotation   = 0:        decimal(9,9) unsigned           # (multiples of 2*pi) base rotation in x-y plane
+    electrode_tip_z_length    = 0:        decimal(9,9) unsigned           # (m) length of tip along z-axis
     electrode_tip_profile     = 'linear': enum('linear','curved','sharp') # tip profile
-    electrode_tip_insulation  = 0:        float                           # (m) insulation coverage, starting from tip bottom
+    electrode_tip_insulation  = 0:        decimal(9,9) unsigned           # (m) insulation coverage, starting from tip bottom
     """
 
     contents = [
@@ -70,8 +73,8 @@ class ElectrodeGeometry(dj.Lookup):
         [1,   15e-6,    15e-6,    0,        'cylinder', 0,         0,         0,       'linear',  0],        # flat circle (e.g., S-Probes)
         [2,   100e-6,   100e-6,   0,        'cylinder', 0,         0,         1.5e-3,  'sharp',   0],        # cone (e.g., Utah array)
         [3,   100e-6,   100e-6,   139.5e-3, 'cylinder', 129.5e-3,  0,         0.5e-3,  'sharp',   0.4e-3],   # sharp cylinder w/ insulation (e.g., FHC sharp electrode)
-        [4,   50e-6,    50e-6,    123e-3,   'cuboid',   0,         0,         2e-3,    'linear',  0],        # blunt cylinder w/ insulation (e.g., Natus hook-wire)
-        [5,   50e-6,    50e-6,    120e-3,   'cuboid',   0,         0,         5e-3,    'linear',  3e-3],     # blunt cylinder w/ insulation (e.g., Natus hook-wire)
+        [4,   50e-6,    50e-6,    123e-3,   'cuboid',   0,         0,         2e-3,    'linear',  0],        # blunt cylinder w/ insulation (e.g., Natus hook-wire stock)
+        [5,   50e-6,    50e-6,    120e-3,   'cuboid',   0,         0,         5e-3,    'linear',  3e-3],     # blunt cylinder w/ insulation (e.g., Natus hook-wire stock)
     ]
 
     def plot(self, center_coords, resolution=100):
@@ -176,15 +179,17 @@ class ElectrodeGeometry(dj.Lookup):
 
                     plot_shape = 'cone'
 
+
 @schema
 class ElectrodeArrayModel(dj.Lookup):
     definition = """
     # Model of an electrode array
-    electrode_array_model:      varchar(32)     # model name (e.g., Wire, Utah, Neuropixels)
+    electrode_array:               varchar(32)  # model name (e.g., Wire, Utah, Neuropixels)
+    electrode_array_version:       varchar(32)
     ---
+    electrode_array_manufacturer: varchar(255)
     tissue_type: enum('brain','muscle') # tissue array used to record from
     invasive: bool
-    base_vertices = null: longblob # (m; 3xN array) base hull vertices xyz-coordinates relative to origin
     """
 
     class Shank(dj.Part):
@@ -192,30 +197,149 @@ class ElectrodeArrayModel(dj.Lookup):
         -> master
         shank: int unsigned # shank index
         ---
-        shank_vertices = null: longblob # (m; 3xN array) shank hull vertices xyz-coordinates relative to base
+        shank_x = 0:        decimal(9,9) # (m) shank center x-coordinate relative to origin
+        shank_y = 0:        decimal(9,9) # (m) shank center y-coordinate relative to origin
+        shank_z = 0:        decimal(9,9) # (m) shank center z-coordinate relative to origin
+        shank_x_length = 0: decimal(9,9) # (m) length of shank along x-axis
+        shank_y_length = 0: decimal(9,9) # (m) length of shank along y-axis
+        shank_z_length = 0: decimal(9,9) # (m) length of shank along z-axis
         """
 
-    class Site(dj.Part):
+    class Electrode(dj.Part):
         definition = """
         -> master.Shank
-        site: int unsigned # site index
+        electrode: int unsigned # electrode index
         ---
-        site_x: float # (m) site center x-coordinate relative to shank
-        site_y: float # (m) site center y-coordinate relative to shank
-        site_z: float # (m) site center xz-coordinate relative to shank
+        electrode_x: decimal(9,9) # (m) electrode center x-coordinate relative to shank
+        electrode_y: decimal(9,9) # (m) electrode center y-coordinate relative to shank
         -> ElectrodeGeometry
         """
 
-    #def summarize(self):
+    contents = [
+        ['Hook-Wire',   'paired',    'Natus Medical Inc.',     'muscle', True],
+        ['Neuropixels', 'nhp demo',  'IMEC',                   'brain',  True],
+        ['Neuropixels', 'nhp 1.0',   'IMEC',                   'brain',  True],
+        ['S-Probe',     '32 chan',   'Plexon',                 'brain',  True],
+        ['Utah',        '96 chan',   'Blackrock Microsystems', 'brain',  True]
+    ]
 
-    # def build(design='planar array'):
+    def build(self):
 
-    #     if design == 'planar array':
+        # build arrays without electrodes
+        key_source = (self - self.Electrode).fetch('KEY')
 
-    #     elif design == 'fine wire':
+        for array_key in key_source:
 
-    #     elif design == 'linear array':
+            # specify array parameters
+            if {'Hook-Wire', 'paired'} == set(array_key.values()):
+                
+                # shank grid and geometries
+                shank_spacing = (0, 60e-6, 0)
+                shank_grid = np.array([
+                    dict(
+                        shank_dims = (0, 0, 0),
+                        electrode_grid_shape = (1, 1),
+                        electrode_grid_spacing = (0, 0),
+                        electrode_geometry = {'electrode_base_x_length': 50e-6, 'electrode_tip_z_length': 2e-3}
+                    ),
+                    dict(
+                        shank_dims = (0, 0, 0),
+                        electrode_grid_shape = (1, 1),
+                        electrode_grid_spacing = (0, 0),
+                        electrode_geometry = {'electrode_base_x_length': 50e-6, 'electrode_tip_z_length': 5e-3}
+                    )
+                ]).reshape((1, 2, 1))
 
+            elif {'Neuropixels', 'nhp demo'} == set(array_key.values()):
+
+                # shank grid and geometries
+                shank_spacing = (0, 0, 0)
+                shank_grid = np.array([
+                    dict(
+                        shank_dims = (120e-6, 45e-3, 120e-6),
+                        electrode_grid_shape = (2, 64),
+                        electrode_grid_spacing = (25e-6, 25e-6),
+                        electrode_geometry = {'electrode_base_x_length': 12e-6}
+                    )
+                ]).reshape((1, 1, 1))
+
+            elif {'Neuropixels', 'nhp 1.0'} == set(array_key.values()):
+
+                # shank grid and geometries
+                shank_spacing = (0, 0, 0)
+                shank_grid = np.array([
+                    dict(
+                        shank_dims = (120e-6, 45e-3, 120e-6),
+                        electrode_grid_shape = (4, 1125),
+                        electrode_grid_spacing = (25e-6, 25e-6),
+                        electrode_geometry = {'electrode_base_x_length': 12e-6}
+                    )
+                ]).reshape((1, 1, 1))
+
+            elif {'S-Probe', '32 chan'} == set(array_key.values()):
+
+                # shank grid and geometries
+                shank_spacing = (0, 0, 0)
+                shank_grid = np.tile(np.array([
+                    dict(
+                        shank_dims = (260e-6, 260e-6, 100e-3),
+                        electrode_grid_shape = (1, 32),
+                        electrode_grid_spacing = (0, 100e-6),
+                        electrode_geometry = {'electrode_base_x_length': 15e-6}
+                    )
+                ]), (1, 32, 1))
+
+            elif {'Utah', '96 chan'} == set(array_key.values()):
+
+                # shank grid and geometries
+                shank_spacing = (400e-6, 400e-6, 0)
+                shank_grid = np.tile(np.array([
+                    dict(
+                        shank_dims = (0, 0, 0),
+                        electrode_grid_shape = (1, 1),
+                        electrode_grid_spacing = (0, 0),
+                        electrode_geometry = {'electrode_tip_z_length': 1.5e-3}
+                    )
+                ]), (10, 10, 1))
+
+            else:
+                print('Key {} unrecognized'.format(array_key))
+                shank_grid = np.array([])
+
+            # build electrode array //TODO change order of enumeration to loop through columns and then rows
+            for shank_idx, (shank_coords, shank) \
+                in enumerate(zip(np.ndindex(shank_grid.shape), shank_grid.flatten())):
+
+                self.Shank.insert1(dict(
+                    **array_key,
+                    shank = shank_idx,
+                    shank_x = Decimal(shank_spacing[0]) * shank_coords[0],
+                    shank_y = Decimal(shank_spacing[1]) * shank_coords[1],
+                    shank_z = Decimal(shank_spacing[2]) * shank_coords[2],
+                    shank_x_length = Decimal(shank['shank_dims'][0]),
+                    shank_y_length = Decimal(shank['shank_dims'][1]),
+                    shank_z_length = Decimal(shank['shank_dims'][2])
+                ))
+
+                elec_keys = []
+                elec_geom_key = (ElectrodeGeometry & shank['electrode_geometry']).fetch1('KEY')
+
+                # offset to center electrode grid horizontally on the shank
+                elec_grid_x_center = Decimal((shank['electrode_grid_spacing'][0] * (shank['electrode_grid_shape'][0] - 1))/2)
+
+                for elec, elec_coords in enumerate(np.ndindex(shank['electrode_grid_shape'])):
+
+                    elec_keys.append(dict(
+                        **array_key,
+                        shank = shank_idx,
+                        electrode = elec,
+                        electrode_x = Decimal(shank['electrode_grid_spacing'][0]) * elec_coords[0] - elec_grid_x_center,
+                        electrode_y = Decimal(shank['electrode_grid_spacing'][1]) * elec_coords[1],
+                        **elec_geom_key
+                    ))
+
+                self.Electrode.insert(elec_keys)
+                
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 1
 # -------------------------------------------------------------------------------------------------------------------------------
@@ -228,6 +352,7 @@ class ElectrodeArray(dj.Lookup):
     ---
     electrode_array_serial = null: varchar(255) # serial number
     """
+
 
 @schema
 class Hardware(dj.Lookup):
@@ -259,6 +384,7 @@ class Hardware(dj.Lookup):
         ['DAM8',          'bioamplifier',            'ISO-DAM8A',                            'World Precision Instruments', 'Sarasota, FL',              '/srv/locker/churchland/General/equipment-manuals/ISODAM8A.pdf'],
         ['CILUX chamber', 'chamber',                 '6-IAM-J0',                             'Crist Instrument Co Inc',     'Hagerstown, MD',            '']
     ]
+
 
 @schema
 class Software(dj.Lookup):
@@ -302,6 +428,12 @@ class ElectrodeArrayConfig(dj.Lookup):
     class Channel(dj.Part):
         definition = """
         -> master
-        -> ElectrodeArrayModel.Site
         channel: int unsigned # channel index (i.e., on recording file)
+        """
+
+    class Electrode(dj.Part):
+        definition = """
+        # Channel electrode(s) (monopolar or differential configurations)
+        -> master.Channel
+        -> ElectrodeArrayModel.Electrode
         """

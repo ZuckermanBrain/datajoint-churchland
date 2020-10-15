@@ -118,7 +118,10 @@ class FilterParams(dj.Manual):
     @classmethod
     def populate(self,
         condition_rel: pacman_acquisition.Behavior.Condition=pacman_acquisition.Behavior.Condition(), 
-        filter_rel=(processing.Filter.Gaussian & {'sd':25e-3,'width':4})):
+        filter_attr: dict={'sd':25e-3,'width':4}):
+
+        _, filter_parts = dju.joinparts(processing.Filter, filter_attr)
+        filter_rel = next(x for x in filter_parts if x in dju.getchildren(processing.Filter))
 
         # check inputs
         assert isinstance(condition_rel, pacman_acquisition.Behavior.Condition), 'Unrecognized condition table'
@@ -151,7 +154,6 @@ class MotorUnitPsth(dj.Computed):
     definition = """
     # Peri-stimulus time histogram
     -> processing.MotorUnit
-    -> pacman_acquisition.Behavior.Condition
     -> BehaviorBlock
     -> FilterParams
     ---
@@ -163,7 +165,6 @@ class NeuronPsth(dj.Computed):
     definition = """
     # Peri-stimulus time histogram
     -> processing.Neuron
-    -> pacman_acquisition.Behavior.Condition
     -> BehaviorBlock
     -> FilterParams
     ---

@@ -62,13 +62,13 @@ If you feel happy with the changes you've made, you can add, commit and push the
 #### Equipment
 ![equipment erd](images/equipment_erd.png)
 
-### Lab
+#### Lab
 ![equipment erd](images/lab_erd.png)
 
-### Reference
+#### Reference
 ![equipment erd](images/reference_erd.png)
 
-### Action
+#### Action
 ![equipment erd](images/action_erd.png)
 
 #### Acquisition
@@ -79,7 +79,7 @@ If you feel happy with the changes you've made, you can add, commit and push the
 
 ### Joined schemas
 
-### Acquisition+
+#### Acquisition+
 ![acquisition erd](images/acquisition_plus_erd.png)
 
 #### Neural

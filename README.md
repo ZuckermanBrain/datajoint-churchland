@@ -57,17 +57,33 @@ If you feel happy with the changes you've made, you can add, commit and push the
 
 ## Pipeline schemas
 
-### Equipment
+### Base schemas
+
+#### Equipment
 ![equipment erd](images/equipment_erd.png)
 
-### Acquisition
+### Lab
+![equipment erd](images/lab_erd.png)
+
+### Reference
+![equipment erd](images/reference_erd.png)
+
+### Action
+![equipment erd](images/action_erd.png)
+
+#### Acquisition
 ![acquisition erd](images/acquisition_erd.png)
 
-### Common
-![common erd](images/common_erd.png)
+#### Processing
+![acquisition erd](images/processing_erd.png)
 
-### Neural
+### Joined schemas
+
+### Acquisition+
+![acquisition erd](images/acquisition_plus_erd.png)
+
+#### Neural
 ![neural erd](images/neural_erd.png)
 
-### EMG
+#### EMG
 ![emg erd](images/emg_erd.png)

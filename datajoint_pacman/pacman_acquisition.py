@@ -474,6 +474,11 @@ class Behavior(dj.Imported):
                         cond_key.update(condition_time=t, condition_force=force)
                         self.Condition.insert1(cond_key, allow_direct_insert=True)
 
+                    # insert save tag key
+                    save_tag_key = dict(**key, save_tag=params['saveTag'])
+                    if not (self.SaveTag & save_tag_key):
+                        self.SaveTag.insert1(save_tag_key)
+
                     # insert trial data
                     trial_key = dict(**key, trial_number=trial, condition_id=cond_id, **data, save_tag=params['saveTag'])
                     self.Trial.insert1(trial_key)

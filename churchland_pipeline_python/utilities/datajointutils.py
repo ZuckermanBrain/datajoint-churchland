@@ -24,7 +24,7 @@ def getcontext(table: DataJointTable) -> FrameType:
     attributes = inspect.getmembers(table, lambda a:not(inspect.isroutine(a)))
 
     # full table name
-    table_name = [a for a in attributes if a[0].startswith('full_table_name')][0][-1]
+    table_name = next(a for a in attributes if a[0].startswith('full_table_name'))[-1]
 
     # check stack for table context
     for frame in inspect.stack():
@@ -188,7 +188,7 @@ def readattributes(table: DataJointTable) -> dict:
 
     # read table definition
     members = inspect.getmembers(table, lambda a:not(inspect.isroutine(a)))
-    table_def = [a for a in members if a[0].startswith('definition')][0][-1]
+    table_def = next(a for a in members if a[0].startswith('definition'))[-1]
     table_def = [s.lstrip() for s in table_def.split('\n')]
 
     # replace null entries with nan

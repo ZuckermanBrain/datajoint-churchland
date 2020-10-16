@@ -1,8 +1,6 @@
 import datajoint as dj
 import re, os, neo
 from . import lab, equipment, reference
-from brpylib import NsxFile, brpylib_ver
-from collections import ChainMap
 from typing import List
 
 schema = dj.schema('churchland_common_acquisition') 

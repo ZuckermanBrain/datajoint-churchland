@@ -9,7 +9,7 @@ schema = dj.schema('churchland_common_reference')
 class EngramPath(dj.Lookup):
     definition = """
     # Provides the local path to Engram whether working on the server or a local machine
-    engram_tier : varchar(32)               # engram data tier name
+    engram_tier: varchar(32)               # engram data tier name
     """
 
     contents = [
@@ -64,11 +64,27 @@ class EngramPath(dj.Lookup):
 # Physiology
 
 @schema
+class BrainLandmark(dj.Lookup):
+    definition = """
+    brain_landmark_abbrev:    varchar(8)                 # landmark abbreviation
+    ---
+    brain_landmark:           varchar(255)               # landmark full name
+    """
+
+    contents = [
+        ['LF',  'Longitudinal Fissure'],
+        ['CS',  'Central Sulcus'],
+        ['SPD', 'Superior Precentral Dimple'],
+        ['SAS', 'Superior Arcuate Sulcus'],
+        ['IAS', 'Inferior Arcuate Sulcus']
+    ]
+
+@schema
 class BrainRegion(dj.Lookup):
     definition = """
-    brain_abbrev : varchar(8) # brain region abbreviation
+    brain_region_abbrev: varchar(8)   # brain region abbreviation
     ---
-    brain_name : varchar(255) # brain region
+    brain_region:        varchar(255) # brain region full name
     """
 
     contents = [
@@ -79,10 +95,10 @@ class BrainRegion(dj.Lookup):
 @schema
 class Muscle(dj.Lookup):
     definition = """
-    muscle_abbrev : varchar(8) # muscle abbreviation
+    muscle_abbrev:    varchar(8)   # muscle abbreviation
     ---
-    muscle_name : varchar(255) # muscle name
-    muscle_head='' : varchar(255) # muscle head
+    muscle:           varchar(255) # muscle name
+    muscle_head = '': varchar(255) # muscle head
     """
 
     contents = [
@@ -92,20 +108,4 @@ class Muscle(dj.Lookup):
         ['StePec','pectoralis major','sternal'],
         ['LatTri','triceps','lateral'],
         ['LatMed','triceps','medial']
-    ]
-
-@schema
-class Sulcus(dj.Lookup):
-    definition = """
-    sulcus_abbrev : varchar(8) # sulcus abbreviation
-    ---
-    sulcus_name : varchar(255) # sulcus name
-    """
-
-    contents = [
-        ['LF','Longitudinal Fissure'],
-        ['CS','Central Sulcus'],
-        ['SPD','Superior Precentral Dimple'],
-        ['SAS','Superior Arcuate Sulcus'],
-        ['IAS','Inferior Arcuate Sulcus']
     ]

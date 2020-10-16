@@ -1,5 +1,5 @@
 import datajoint as dj
-import re, os
+import re, os, neo
 from . import lab, equipment, reference
 from brpylib import NsxFile, brpylib_ver
 from collections import ChainMap
@@ -266,14 +266,12 @@ class EphysRecording(dj.Imported):
                 primary_key = key.copy()
 
                 # read NSx file
-                nsx_file = NsxFile(pth)
-
-                # read data from first channel
-                nsx_data = nsx_file.getdata(nsx_file.extended_headers[0]['ElectrodeID'])
+                reader = neo.rawio.BlackrockRawIO(pth)
+                reader.parse_header()
 
                 # pull sample rate and recording duration
-                key['ephys_sample_rate'] = int(nsx_data['samp_per_s'])
-                key['ephys_duration'] = nsx_data['data_time_s']
+                key['ephys_sample_rate'] = int(next(iter(reader.sig_sampling_rates.values())))
+                key['ephys_duration'] = reader.get_signal_size(0,0) / key['ephys_sample_rate']
 
                 # ensure file path is "global" (i.e., relative to U19 server)
                 key['ephys_file_path'] = (reference.EngramPath & {'engram_tier':'locker'}).ensureglobal(pth)
@@ -281,27 +279,33 @@ class EphysRecording(dj.Imported):
                 # insert self
                 self.insert1(key)
 
+                # channel header name and ID indices
+                name_idx, id_idx = [
+                    idx for idx, name in enumerate(reader.header['signal_channels'].dtype.names) \
+                    if name in ['name','id']
+                ]
+
                 # insert channel header information //TODO double check the map files use the ID and not the label
-                for j, elec in enumerate(nsx_file.extended_headers):
+                for j, chan in enumerate(reader.header['signal_channels']):
+
                     key = primary_key.copy()
                     key['channel_index'] = j
-                    key['channel_id'] = elec['ElectrodeID']
-                    if re.search('^\d',elec['ElectrodeLabel']):
+                    key['channel_id'] = chan[id_idx]
+                    chan_name = chan[name_idx]
+
+                    if re.search('^\d', chan_name):
                         key['channel_label'] = 'brain'
 
-                    elif re.search('ainp[1-8]$', elec['ElectrodeLabel']):
+                    elif re.search('ainp[1-8]$', chan_name):
                         key['channel_label'] = 'emg'
 
-                    elif elec['ElectrodeLabel'] == 'ainp15':
+                    elif chan_name == 'ainp15':
                         key['channel_label'] = 'stim'
 
-                    elif elec['ElectrodeLabel'] == 'ainp16':
+                    elif chan_name == 'ainp16':
                         key['channel_label'] = 'sync'
 
                     self.Channel.insert1(key)
-
-                # close file
-                nsx_file.close()
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # LEVEL 3

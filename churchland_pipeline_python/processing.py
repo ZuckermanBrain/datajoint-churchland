@@ -1,8 +1,7 @@
 import datajoint as dj
-import re, inspect
-from . import acquisition, equipment
+import re, inspect, neo
+from . import acquisition, equipment, reference
 from .utilities import datasync, datajointutils as dju
-from brpylib import NsxFile, brpylib_ver
 import math, numpy as np
 from scipy import signal
 
@@ -190,17 +189,34 @@ class SyncBlock(dj.Imported):
 
     def make(self, key):
 
-        # fetch sync signal
-        nsx_path = (acquisition.EphysRecording & key).fetch1('ephys_file_path')
-        nsx_file = NsxFile(nsx_path)
+        # sync channel ID
+        sync_rel = acquisition.EphysRecording.Channel & key & {'channel_label': 'sync'}
+        sync_id, sync_idx = sync_rel.fetch1('channel_id', 'channel_index')
 
-        sync_channel_id = (acquisition.EphysRecording.Channel & key & {'channel_label': 'sync'}).fetch1('channel_id')
-        sync_channel = nsx_file.getdata(sync_channel_id)
+        # fetch local ephys recording file path and sample rate
+        ephys_file_path, fs_ephys = (acquisition.EphysRecording & key).fetch1('ephys_file_path', 'ephys_sample_rate')
+        ephys_file_path = (reference.EngramPath & {'engram_tier': 'locker'}).ensurelocal(ephys_file_path)
 
-        nsx_file.close()
+        # read NSx file
+        reader = neo.rawio.BlackrockRawIO(ephys_file_path)
+        reader.parse_header()
+
+        # sync signal gain
+        id_idx, gain_idx = [
+            idx for idx, name in enumerate(reader.header['signal_channels'].dtype.names) \
+            if name in ['id','gain']
+        ]
+        sync_gain = next(chan[gain_idx] for chan in reader.header['signal_channels'] if chan[id_idx]==sync_id)
+
+        # extract NSx channel data from memory map (within a nested dictionary)
+        nsx_data = next(iter(reader.nsx_datas.values()))
+        nsx_data = next(iter(nsx_data.values()))
+
+        # extract sync signal from NSx array and apply gain
+        sync_signal = sync_gain * nsx_data[:, sync_idx]
 
         # parse sync signal
-        sync_block = datasync.decodesyncsignal(sync_channel)
+        sync_block = datasync.decodesyncsignal(sync_signal, fs_ephys)
 
         # remove corrupted blocks
         sync_block = [block for block in sync_block if not block['corrupted']]

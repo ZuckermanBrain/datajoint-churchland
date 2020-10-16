@@ -231,7 +231,7 @@ class TrialAlignment(dj.Computed):
             force = trial_rel.processforce()
 
             # compute normalized mean squared error for each lag
-            nmse = -np.inf*np.ones(1+2*max_lag_samp)
+            nmse = np.full(1+2*max_lag_samp, -np.inf)
             for idx, lag in enumerate(lags):
                 if (align_idx+lag+align_idx_trunc[-1]) < len(force):
                     force_align = force[align_idx+lag+align_idx_trunc]

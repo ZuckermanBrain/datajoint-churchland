@@ -90,7 +90,7 @@ class Session(dj.Manual):
         monkey: lab.Monkey, 
         rig: lab.Rig, 
         task: Task,
-        dates: List[str]=[],
+        dates: List[str]=None,
         neural_signal_processor: equipment.Hardware=(equipment.Hardware & {'hardware':'Cerebus'})):
 
         # check inputs
@@ -201,7 +201,7 @@ class BehaviorRecording(dj.Imported):
             speedgoat_files = list(os.listdir(speedgoat_path))
 
             # speedgoat summary file
-            summary_file = next(filter(lambda f: re.search('.*\.summary',f), speedgoat_files))
+            summary_file = next(f for f in spedgoat_files if re.search('.*\.summary',f))
 
             # ensure file path is "global" (i.e., relative to U19 server)
             key['behavior_summary_file_path'] = (reference.EngramPath & {'engram_tier':'locker'}).ensureglobal(speedgoat_path + summary_file)

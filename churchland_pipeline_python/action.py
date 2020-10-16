@@ -12,7 +12,7 @@ class BurrHole(dj.Manual):
     burr_hole_date: date
     burr_hole_x: decimal(5,3) # (mm)
     burr_hole_y: decimal(5,3) # (mm)
-    burr_hole_notes : varchar(4095)
+    burr_hole_notes: varchar(4095)
     """
 
     class User(dj.Part):
@@ -22,43 +22,34 @@ class BurrHole(dj.Manual):
         -> lab.User
         """
 
-# microstim
 
 @schema
-class MRI(dj.Manual):
+class Mri(dj.Manual):
     definition = """
     -> lab.Monkey
     mri_date: date
     ---
-    -> reference.Sulcus
-    mri_x : decimal(6,3) # medial/lateral (+/-) coordinates [mm]
-    mri_y : decimal(6,3) # dorsal/ventral (+/-) coordinates [mm]
-    mri_z : decimal(6,3) # anterior/posterior (+/-) coordinates [mm]
-    mri_notes : varchar(4095)
+    mri_notes: varchar(4095)
     """
 
-# palpation
-# surgery types? (implant, array, )
-
-
-@schema
-class Surgery(dj.Manual):
-    definition = """
-    -> lab.Monkey
-    surgery_date: date
-    ---
-    surgery_notes : varchar(4095)
-    """
-
-    class Hardware(dj.Part):
+    class Coords(dj.Part):
         definition = """
+        # Coordinates
         -> master
-        -> equipment.Hardware
+        -> reference.BrainLandmark
+        coords_id: smallint unsigned # ID number
+        ---
+        origin: bool        # coordinate(s) used to define the origin
+        surface: bool       # superficial (True) or deep (False)
+        mri_x: decimal(6,3) # medial/lateral (+/-) coordinates (mm)
+        mri_y: decimal(6,3) # anterior/posterior (+/-) coordinates (mm)
+        mri_z: decimal(6,3) # dorsal/ventral (+/-) coordinates (mm)
+        hemisphere = null: enum('left', 'right')
         """
 
     class User(dj.Part):
         definition = """
-        # Personnel
+        # MRI personnel
         -> master
         -> lab.User
         """

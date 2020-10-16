@@ -1,6 +1,5 @@
 import datajoint as dj
-from ... import action, acquisition, equipment, lab, processing, reference
-from ...tasks.pacman import pacman_acquisition, pacman_processing
+from churchland_pipeline_python import acquisition, equipment
 import os, re, inspect
 from datetime import datetime
 
@@ -13,9 +12,9 @@ from datetime import datetime
 
 def schema_drop_order():
     return [
-        'churchland_shared_pacman_processing',
-        'churchland_shared_pacman_acquisition',
-        'churchland_common_processing',
+        'churchland_analyses_pacman_processing',
+        'churchland_analyses_pacman_acquisition',
+        'churchland_analyses_processing',
         'churchland_common_acquisition',
         'churchland_common_action',
         'churchland_common_reference',

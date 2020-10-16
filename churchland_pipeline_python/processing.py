@@ -1,7 +1,10 @@
 import datajoint as dj
+import re, inspect
 from . import acquisition, equipment
-from .utilities import datasync
+from .utilities import datasync, datajointutils as dju
 from brpylib import NsxFile, brpylib_ver
+import math, numpy as np
+from scipy import signal
 
 schema = dj.schema('churchland_analyses_processing')
 
@@ -10,12 +13,34 @@ schema = dj.schema('churchland_analyses_processing')
 # -------------------------------------------------------------------------------------------------------------------------------
 
 @schema
+class BrainSort(dj.Manual):
+    definition = """
+    # Spike sorted brain data
+    -> acquisition.BrainChannelGroup
+    brain_sort_id: tinyint unsigned
+    ---
+    -> equipment.Software
+    brain_sort_path: varchar(1012) # path to sort files
+    """
+
+
+@schema
+class EmgSort(dj.Manual):
+    definition = """
+    # Spike sorted EMG data
+    -> acquisition.EmgChannelGroup
+    emg_sort_id: tinyint unsigned
+    ---
+    -> equipment.Software
+    emg_sort_path: varchar(1012) # path to sort files
+    """
+
+
+@schema
 class Filter(dj.Lookup):
     definition = """
     # Filter bank
-    filter_name: varchar(16) # filter class (e.g. Butterworth)
-    filter_id: smallint unsigned # unique filter identifier
-    ---
+    filter_id: int unsigned # unique filter identifier
     """
     
     class Beta(dj.Part):
@@ -23,36 +48,133 @@ class Filter(dj.Lookup):
         # Beta kernel
         -> master
         ---
-        duration: decimal(5,3) # interval kernel is defined over [seconds]
-        alpha: decimal(5,3) # shape parameter
-        beta: decimal(5,3) # shape parameter
-        """
+        duration = 0.275: decimal(5,5) unsigned # interval kernel is defined over (s)
+        alpha = 3: decimal(5,4) unsigned # shape parameter
+        beta = 5: decimal(5,4) unsigned # shape parameter
+        """ 
+
+        def filter(self, y, fs, axis=0, normalize=False):
+
+            assert len(self) == 1, 'Specify one filter'
+
+            # convert parameters based on sample rate
+            precision = int(np.ceil(np.log10(fs)))
+            x = np.arange(0, float(self.fetch1('duration')), 1/fs).round(precision)
+
+            # impulse response
+            a = float(self.fetch1('alpha'))
+            b = float(self.fetch1('beta'))
+            B = (math.gamma(a)*math.gamma(b))/math.gamma(a+b)
+            fx = (x**(a-1) * (1-x)**(b-1))/B
+
+            # filter input
+            z = signal.fftconvolve(y, fx, mode='same', axes=axis)
+
+            # normalize by magnitude of impule response
+            if normalize:
+                z /= fx.max()
+
+            return z
         
+
     class Boxcar(dj.Part):
         definition = """
         -> master
         ---
-        duration: decimal(5,3) # filter duration [seconds]
+        duration = 0.1: decimal(18,9) unsigned # filter duration (s)
         """
+
+        def filter(self, y, fs, axis=0, normalize=False):
+
+            assert len(self) == 1, 'Specify one filter'
+
+            # convert parameters based on sample rate
+            wid = int(round(fs * float(self.fetch1('duration'))))
+            half_wid = int(np.ceil(wid/2))
+
+            # impulse response
+            fx = np.concatenate((np.zeros(half_wid), np.ones(wid), np.zeros(half_wid)))
+
+            # filter input
+            z = signal.fftconvolve(y, fx, mode='same', axes=axis)
+
+            # normalize by magnitude of impule response
+            if normalize:
+                z /= fx.max()
+
+            return z
     
+
     class Butterworth(dj.Part):
         definition = """
         -> master
         ---
-        order: tinyint unsigned # filter order
-        low_cut = null: smallint unsigned # low-cut frequency [Hz]
-        high_cut = null: smallint unsigned # high-cut frequency [Hz]
+        order = 2: tinyint unsigned # filter order
+        low_cut = 500: smallint unsigned # low-cut frequency (Hz)
+        high_cut = null: smallint unsigned # high-cut frequency (Hz)
         """
+
+        def filter(self, y, fs, axis=0):
+
+            assert len(self) == 1, 'Specify one filter'
+
+            # parse inputs
+            n, low_cut, high_cut = self.fetch1('order','low_cut','high_cut')
+            
+            assert low_cut or high_cut, 'Missing critical frequency or frequencies'
+
+            if low_cut and high_cut:
+                btype = 'bandpass'
+                Wn = [low_cut, high_cut]
+
+            elif low_cut and not high_cut:
+                btype = 'highpass'
+                Wn = low_cut
+
+            else:
+                btype = 'lowpass'
+                Wn = high_cut
+
+            # get second order sections
+            sos = signal.butter(n, Wn, btype, fs=fs, output='sos')
+
+            # filter input
+            z = signal.sosfilt(sos, y, axis=axis)
+
+            return z            
         
+
     class Gaussian(dj.Part):
         definition = """
         # Gaussian kernel
         -> master
         ---
-        sd: decimal(7,6) # filter standard deviation [seconds]
-        width: tinyint unsigned # filter width [multiples of standard deviations]
+        sd = 25e-3: decimal(18,9) unsigned # filter standard deviation (s)
+        width = 4: tinyint unsigned # filter width (multiples of standard deviations)
         """
-        
+
+        def filter(self, y, fs, axis=0, normalize=False):
+
+            assert len(self) == 1, 'Specify one filter'
+
+            # convert parameters based on sample rate
+            sd = fs * float(self.fetch1('sd'))
+            wid = round(sd * self.fetch1('width'))
+
+            # impulse response
+            x = np.arange(-wid,wid)
+            fx = 1/(sd*np.sqrt(2*np.pi)) * np.exp(-x**2/(2*sd**2))
+
+            # filter input
+            z = signal.fftconvolve(y, fx, mode='same', axes=axis)
+
+            # normalize by magnitude of impule response
+            if normalize:
+                z /= fx.max()
+
+            return z
+
+
 @schema
 class SyncBlock(dj.Imported):
     definition = """
@@ -97,6 +219,7 @@ class MotorUnit(dj.Imported):
     definition = """
     # Sorted motor unit
     -> acquisition.EmgChannelGroup
+    -> EmgSort
     motor_unit_id: smallint unsigned # unique unit ID
     ---
     -> equipment.Software
@@ -112,15 +235,16 @@ class MotorUnit(dj.Imported):
         motor_unit_template: longblob # waveform template
         """
 
+
 @schema
 class Neuron(dj.Imported):
     definition = """
-    # Sorted neuron
-    -> acquisition.NeuralChannelGroup
+    # Sorted brain neuron
+    -> acquisition.BrainChannelGroup
+    -> BrainSort
     neuron_id: smallint unsigned # unique unit ID
     ---
-    -> equipment.Software
-    neuron_isolation: enum("single","multi") # neuron isolation quality (single- or multi-unit)
+    neuron_isolation: enum('single', 'multi') # neuron isolation quality (single- or multi-unit)
     neuron_session_spikes: longblob # array of spike indices
     """
         
@@ -128,7 +252,7 @@ class Neuron(dj.Imported):
         definition = """
         # Sorted spike templates
         -> master
-        -> acquisition.NeuralChannelGroup.Channel
+        -> acquisition.BrainChannelGroup.Channel
         ---
         neuron_template: longblob # waveform template
         """

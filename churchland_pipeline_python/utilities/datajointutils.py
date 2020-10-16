@@ -138,7 +138,7 @@ def insertpart(master: DataJointTable, part_name: str, **kwargs) -> None:
 def nextkey(table: DataJointTable, index: int=0) -> dict:
     """Gets the next (unpopulated) key for a table."""
 
-    keys = (table.key_source - table).proj().fetch(as_dict=True)
+    keys = (table.key_source - table).fetch("KEY")
     if len(keys)>=1:
         return keys[index]
     else:
@@ -203,4 +203,3 @@ def readattributes(table: DataJointTable) -> dict:
             for s in table_def if attr_name.match(s)}
 
     return table_attr
-

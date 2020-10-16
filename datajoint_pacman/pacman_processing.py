@@ -4,7 +4,6 @@ import itertools, inspect
 from churchland_pipeline_python import lab, acquisition, processing, equipment
 from churchland_pipeline_python.utilities import datasync, datajointutils as dju
 from . import pacman_acquisition
-from brpylib import NsxFile, brpylib_ver
 from datetime import datetime
 
 schema = dj.schema('churchland_analyses_pacman_processing')

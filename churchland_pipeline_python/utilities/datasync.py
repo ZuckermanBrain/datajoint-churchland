@@ -1,5 +1,5 @@
 """
-This package defines modules for synchronizing data across acquisition systems
+Package for synchronizing data across acquisition systems
 """
 
 import numpy as np
@@ -7,17 +7,16 @@ import warnings
 from itertools import compress
 
 
-def decodesyncsignal(sync_channel, max_sample_err=2, max_time_step=0.2):
+def decodesyncsignal(sync_signal, fs, max_sample_err=2, max_time_step=0.2):
 
     # number of data samples
-    num_samples = sync_channel['data_headers'][0]['NumDataPoints']
+    num_samples = len(sync_signal)
 
     # denoised sync signal
-    time_stamp = sync_channel['data_headers'][0]['Timestamp']
-    sync_signal = sync_channel['data'][0][time_stamp:] > sync_channel['data'][0][time_stamp:].mean()
+    sync_signal = sync_signal > sync_signal.mean()
 
     # expected number of samples between sync signal edges based on timing code //TODO add more details about the timing code
-    samples_per_ms = int(sync_channel['samp_per_s']/1e3)
+    samples_per_ms = int(round(fs/1e3))
     expected_pulse_len = dict(
         low           =       samples_per_ms,
         high          =   2 * samples_per_ms,
@@ -65,7 +64,7 @@ def decodesyncsignal(sync_channel, max_sample_err=2, max_time_step=0.2):
     sync_block = [dict(**d, time=sum(bin_code * pow_2)/10 if d['corrupted']==False else np.nan) for d, bin_code in zip(sync_block, binary_code)]
 
     # update list of corrupted blocks if any unusually large jumps in time
-    max_sim_time = sync_block[0]['time'] + sync_channel['data_time_s']
+    max_sim_time = sync_block[0]['time'] + num_samples/fs
     for i in range(1,len(sync_block)):
         if not (sync_block[i]['corrupted'] or sync_block[i-1]['corrupted']):
             sync_block[i].update(corrupted = (sync_block[i]['time']>sync_block[i-1]['time']+max_time_step) or sync_block[i]['time']>max_sim_time)
@@ -76,6 +75,7 @@ def decodesyncsignal(sync_channel, max_sample_err=2, max_time_step=0.2):
         warnings.warn('{:.2f}% corrupted sync blocks. Timing estimate may be unreliable.'.format(p_corrupted))
 
     return sync_block
+
 
 def ephystrialstart(fs_ephys, trial_time, sync_block_start, sync_block_time):
 

@@ -92,7 +92,7 @@ class Session(dj.Manual):
         monkey: lab.Monkey, 
         rig: lab.Rig, 
         task: Task,
-        dates: List[str]=[],
+        dates: List[str]=None,
         neural_signal_processor: equipment.Hardware=(equipment.Hardware & {'hardware':'Cerebus'})):
 
         # check inputs

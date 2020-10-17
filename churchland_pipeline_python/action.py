@@ -3,21 +3,26 @@ from . import lab, reference, equipment
 
 schema = dj.schema('churchland_common_action')
 
+# =======
+# LEVEL 0
+# =======
+
 @schema
-class BurrHole(dj.Manual):
+class Chamber(dj.Manual):
     definition = """
+    # Neural recording chamber
     -> lab.Monkey
-    burr_hole_index: tinyint unsigned
+    chamber_id:   tinyint unsigned # chamber ID number
     ---
-    burr_hole_date: date
-    burr_hole_x: decimal(5,3) # (mm)
-    burr_hole_y: decimal(5,3) # (mm)
-    burr_hole_notes: varchar(4095)
+    chamber_date: date             # chamber implantation date
+    chmaber_x:    decimal(5,3)     # chamber center x-coordinate (+/-, medial/lateral) on brain (mm)
+    chamber_y:    decimal(5,3)     # chamber center y-coordinate (+/-, anterior/posterior) on brain (mm)
+    -> equipment.Hardware          # physical chamber and its geometry
     """
 
     class User(dj.Part):
         definition = """
-        # Personnel
+        # Chamber implantation personnel
         -> master
         -> lab.User
         """
@@ -27,29 +32,50 @@ class BurrHole(dj.Manual):
 class Mri(dj.Manual):
     definition = """
     -> lab.Monkey
-    mri_date: date
+    -> lab.User                   # person who documented landmarks
+    mri_date:       date          # MRI procedure date
     ---
-    mri_notes: varchar(4095)
+    mri_notes = '': varchar(4095) # MRI notes
     """
 
-    class Coords(dj.Part):
+    class Landmark(dj.Part):
         definition = """
-        # Coordinates
+        # MRI landmark coordinates
         -> master
         -> reference.BrainLandmark
-        coords_id: smallint unsigned # ID number
+        landmark_id:      tinyint unsigned                 # landmark ID number
         ---
-        origin: bool        # coordinate(s) used to define the origin
-        surface: bool       # superficial (True) or deep (False)
-        mri_x: decimal(6,3) # medial/lateral (+/-) coordinates (mm)
-        mri_y: decimal(6,3) # anterior/posterior (+/-) coordinates (mm)
-        mri_z: decimal(6,3) # dorsal/ventral (+/-) coordinates (mm)
-        hemisphere = null: enum('left', 'right')
+        brain_hemisphere: enum('left', 'right', 'midline') # brain hemisphere or midline
+        brain_surface:    bool                             # whether landmark is on the brain surface (True) or deep (i.e., in a sulcus)
+        landmark_x:       decimal(6,3)                     # landmark x-coordinate (+/-, medial/lateral) (mm)
+        landmark_y:       decimal(6,3)                     # landmark y-coordinate (+/-, anterior/posterior) (mm)
+        landmark_z:       decimal(6,3)                     # landmark z-coordinate (+/-, dorsal/ventral) (mm)
+        origin = 0:       bool                             # whether landmark should be used to define the origin
         """
+
+
+# =======
+# LEVEL 1
+# =======
+
+@schema
+class BurrHole(dj.Manual):
+    definition = """
+    # Small access hole in chamber for neural probes
+    -> lab.Monkey
+    -> Chamber
+    burr_hole_id:             smallint unsigned # burr hole ID number
+    ---
+    burr_hole_date:           date              # burr hole procedure date
+    burr_hole_x:              decimal(5,3)      # burr hole center x-coordinate (+/-, medial/lateral) relative to chamber center (mm)
+    burr_hole_y:              decimal(5,3)      # burr hole center y-coordinate (+/-, anterior/posterior) relative to chamber center (mm)
+    burr_hole_diameter = 3.5: decimal(5,3)      # burr hole diameter (mm)
+    burr_hole_notes = '':     varchar(4095)     # burr hole notes
+    """
 
     class User(dj.Part):
         definition = """
-        # MRI personnel
+        # Burr hole procedure personnel
         -> master
         -> lab.User
         """

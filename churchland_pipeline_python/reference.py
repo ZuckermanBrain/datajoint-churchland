@@ -3,31 +3,40 @@ import os, sys
 
 schema = dj.schema('churchland_common_reference')
 
-# Research Computing
+# ==================
+# RESEARCH COMPUTING
+# ==================
 
 @schema
-class EngramPath(dj.Lookup):
+class EngramTier(dj.Lookup):
     definition = """
-    # Provides the local path to Engram whether working on the server or a local machine
-    engram_tier: varchar(32)               # engram data tier name
+    # Engram storage tiers
+    engram_tier: varchar(32) # engram tier name
     """
 
     contents = [
         ['locker'],
-        ['labshare']
+        ['labshare'],
+        ['staging']
     ]
 
-    def getglobalpath(self):
+    def getremotepath(self):
+        """Returns remote path (relative to U19 server) to a storage tier."""
 
-        assert len(self)==1, 'Request one path'
+        assert len(self)==1, 'Specify one tier'
+
         path_parts = ['', 'srv', self.fetch1('engram_tier'), 'churchland', '']
+
         return os.path.sep.join(path_parts) 
 
-    def getlocalpath(self):
 
-        assert len(self)==1, 'Request one path'
+    def getlocalpath(self):
+        """Returns local path (inferred based on OS) to a storage tier."""
+
+        assert len(self)==1, 'Specify one tier'
 
         path_parts = ['']
+
         engram_tier = self.fetch1('engram_tier')
 
         # check if we're on the U19 server
@@ -35,8 +44,11 @@ class EngramPath(dj.Lookup):
             path_parts.extend(['srv', engram_tier, 'churchland', ''])
 
         else:
+            # identify local OS
             local_os = sys.platform
             local_os = local_os[:(min(3, len(local_os)))]
+
+            # append OS default external volume name
             if local_os.lower() == 'lin':
                 path_parts.append('mnt')
 
@@ -46,29 +58,38 @@ class EngramPath(dj.Lookup):
             elif local_os.lower() == 'dar':
                 path_parts.append('Volumes')
 
+            # append local storage tier name
             path_parts.extend(['Churchland-' + engram_tier, ''])
 
         return os.path.sep.join(path_parts)
+
     
-    def ensureglobal(self, path):
+    def ensureremote(self, path: str) -> str:
+        """Ensures that a path to a storage tier is provided relative to the remote (U19) server."""
 
-        assert len(self)==1, 'Request one path'
-        return path.replace(self.getlocalpath(), self.getglobalpath())
+        assert len(self)==1, 'Specify one tier'
 
-    def ensurelocal(self, path):
-
-        assert len(self)==1, 'Request one path'
-        return path.replace(self.getglobalpath(), self.getlocalpath())
+        return path.replace(self.getlocalpath(), self.getremotepath())
 
 
-# Physiology
+    def ensurelocal(self, path: str) -> str:
+        """Ensures that a path to a storage tier is provided relative to the local filesystem."""
+
+        assert len(self)==1, 'Specify one tier'
+
+        return path.replace(self.getremotepath(), self.getlocalpath())
+
+
+# ==========
+# PHYSIOLOGY
+# ==========
 
 @schema
 class BrainLandmark(dj.Lookup):
     definition = """
-    brain_landmark_abbrev:    varchar(8)                 # landmark abbreviation
+    brain_landmark_abbr: varchar(8)   # brain landmark abbreviation
     ---
-    brain_landmark:           varchar(255)               # landmark full name
+    brain_landmark:      varchar(255) # brain landmark name
     """
 
     contents = [
@@ -79,33 +100,36 @@ class BrainLandmark(dj.Lookup):
         ['IAS', 'Inferior Arcuate Sulcus']
     ]
 
+
 @schema
 class BrainRegion(dj.Lookup):
     definition = """
-    brain_region_abbrev: varchar(8)   # brain region abbreviation
+    brain_region_abbr: varchar(8)   # brain region abbreviation
     ---
-    brain_region:        varchar(255) # brain region full name
+    brain_region:      varchar(255) # brain region name
     """
 
     contents = [
-        ['M1','primary motor cortex'],
-        ['PMd','dorsal premotor cortex']
+        ['M1',  'primary motor cortex'],
+        ['PMd', 'dorsal premotor cortex'],
+        ['SMA', 'supplementary motor area']
     ]
+
 
 @schema
 class Muscle(dj.Lookup):
     definition = """
-    muscle_abbrev:    varchar(8)   # muscle abbreviation
+    muscle_abbr:      varchar(8)   # muscle abbreviation
     ---
     muscle:           varchar(255) # muscle name
     muscle_head = '': varchar(255) # muscle head
     """
 
     contents = [
-        ['AntDel','deltoid','anterior'],
-        ['LatDel','deltoid','lateral'],
-        ['ClaPec','pectoralis major','clavicular'],
-        ['StePec','pectoralis major','sternal'],
-        ['LatTri','triceps','lateral'],
-        ['LatMed','triceps','medial']
+        ['AntDel', 'deltoid',          'anterior'],
+        ['LatDel', 'deltoid',          'lateral'],
+        ['ClaPec', 'pectoralis major', 'clavicular'],
+        ['StePec', 'pectoralis major', 'sternal'],
+        ['LatTri', 'triceps',          'lateral'],
+        ['LatMed', 'triceps',          'medial']
     ]

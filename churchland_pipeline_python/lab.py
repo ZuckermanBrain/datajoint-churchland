@@ -5,11 +5,11 @@ schema = dj.schema('churchland_common_lab')
 @schema
 class Monkey(dj.Lookup):
     definition = """
-    monkey : varchar(32) # unique monkey name
+    monkey:    varchar(32)    # monkey name
     ---
-    monkey_id : int unsigned # monkey ID number
-    sex : enum("M","F") # monkey sex
-    dob : date # monkey date of birth
+    monkey_id: int unsigned   # monkey ID number
+    sex:       enum('M', 'F') # monkey sex
+    dob:       date           # monkey date of birth
     """
     
     contents = [
@@ -22,13 +22,13 @@ class Monkey(dj.Lookup):
         ['Igor',     39914, 'M', '2009-04-11'],
         ['Eugustus', 1196,  'M', '1999-01-01']
     ]
+
     
 @schema
 class Rig(dj.Lookup):
     definition = """
     # Experimental rigs
-    rig : varchar(16) # unique rig name
-    ---
+    rig: varchar(16) # rig name
     """
     
     contents = [
@@ -37,12 +37,13 @@ class Rig(dj.Lookup):
         ['Krypton']
     ]
 
+
 @schema
 class User(dj.Lookup):
     definition = """
-    user : varchar(32) # unique user identifier (Columbia uni)
+    user_uni: varchar(32)  # user uni
     ---
-    user_name : varchar(255) # first and last name
+    user:     varchar(255) # user name (first and last)
     """
     
     contents = [

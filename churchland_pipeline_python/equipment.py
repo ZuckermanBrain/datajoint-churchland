@@ -1,27 +1,53 @@
 """Equipment schema.
 
-This module contains class definitions for equipment.
+This module contains class definitions for lab equipment (hardware and software).
 
 Coordinate system: x (left/right, onscreen); y (up/down, onscreen); z (into screen)
 """
 
 import datajoint as dj
-import numpy as np
 import re
+import numpy as np
 from decimal import Decimal
-from matplotlib import pyplot as plt, patches as patches
-from mpl_toolkits.mplot3d import Axes3D, art3d
 
 schema = dj.schema('churchland_common_equipment')
 
-# -------------------------------------------------------------------------------------------------------------------------------
+# =======
 # LEVEL 0
-# -------------------------------------------------------------------------------------------------------------------------------
+# =======
+
+@schema
+class ElectrodeGeometry(dj.Lookup):
+    definition = """
+    # Geometry of an electrode, defined by its base and tip
+    electrode_geometry_id:                smallint unsigned                 # electrode geometry ID number
+    ---
+    electrode_base_shape:                 enum('cuboid', 'cylinder')        # electrode base shape
+    electrode_base_x_length:              decimal(9,9) unsigned             # electrode base x-axis length (m)
+    electrode_base_y_length:              decimal(9,9) unsigned             # electrode base y-axis length (m)
+    electrode_base_z_length = 0:          decimal(9,9) unsigned             # electrode base z-axis length (m)
+    electrode_base_insulation_length = 0: decimal(9,9) unsigned             # electrode base insulation length, starting from base top (m)
+    electrode_base_rotation = 0:          decimal(9,9) unsigned             # electrode base rotation in the x-y plane (multiples of 2*pi)
+    electrode_tip_profile = 'linear':     enum('linear', 'curved', 'sharp') # electrode tip profile
+    electrode_tip_z_length = 0:           decimal(9,9) unsigned             # electrode tip z-axis length (m)
+    electrode_tip_insulation_length = 0:  decimal(9,9) unsigned             # electrode tip insulation length, starting from tip bottom (m)
+    """
+
+    contents = [
+        #id  |base shape |base-x   |base-y   |base-z   |base ins. |base rot. |tip prof. |tip-z   |tip ins.
+        [0,   'cuboid',   12e-6,    12e-6,    0,        0,         0,         'linear',  0,       0],        # flat square (e.g., Neuropixels)
+        [1,   'cylinder', 15e-6,    15e-6,    0,        0,         0,         'linear',  0,       0],        # flat circle (e.g., S-Probes)
+        [2,   'cylinder', 100e-6,   100e-6,   0,        0,         0,         'sharp',   1.5e-3,  0],        # cone (e.g., Utah array)
+        [3,   'cylinder', 100e-6,   100e-6,   139.5e-3, 129.5e-3,  0,         'sharp',   0.5e-3,  0.4e-3],   # sharp cylinder w/ insulation (e.g., FHC sharp electrode)
+        [4,   'cuboid',   50e-6,    50e-6,    123e-3,   0,         0,         'linear',  2e-3,    0],        # blunt cylinder w/ insulation (e.g., Natus hook-wire stock)
+        [5,   'cuboid',   50e-6,    50e-6,    120e-3,   0,         0,         'linear',  5e-3,    3e-3],     # blunt cylinder w/ insulation (e.g., Natus hook-wire stock)
+    ]
+
 
 @schema
 class EquipmentCategory(dj.Lookup):
     definition = """
-    equipment_category: varchar(32)
+    equipment_category: varchar(32) # equipment category name
     """
 
     contents = [
@@ -38,189 +64,66 @@ class EquipmentCategory(dj.Lookup):
 
 
 @schema
-class Parameter(dj.Lookup):
+class EquipmentParameter(dj.Lookup):
     definition = """
-    parameter:             varchar(32)  # parameter name
+    equipment_parameter:                  varchar(32)  # equipment parameter name
     ---
-    parameter_description: varchar(255) # additional parameter details, units, etc.
+    equipment_parameter_units = '':       varchar(32)  # equipment parameter units (full name)
+    equipment_parameter_description = '': varchar(255) # equipment parameter description
     """
 
     contents = [
-        ['force capacity', 'maximum force capacity (Newtons)'],
-        ['voltage output', 'calibrated output signal (Volts)']
+        ['force capacity', 'Newtons', 'maximum force capacity'],
+        ['voltage output', 'Volts',   'calibrated output signal']
     ]
 
 
-@schema
-class ElectrodeGeometry(dj.Lookup):
-    definition = """
-    electrode_geometry_id: smallint unsigned # unique ID
-    ---
-    electrode_base_x_length:              decimal(9,9) unsigned           # (m) length of base along x-axis
-    electrode_base_y_length:              decimal(9,9) unsigned           # (m) length of base along y-axis
-    electrode_base_z_length   = 0:        decimal(9,9) unsigned           # (m) length of base along z-axis
-    electrode_base_shape      = 'cuboid': enum('cuboid','cylinder')       # base shape
-    electrode_base_insulation = 0:        decimal(9,9) unsigned           # (m) insulation coverage, starting from base top
-    electrode_base_rotation   = 0:        decimal(9,9) unsigned           # (multiples of 2*pi) base rotation in x-y plane
-    electrode_tip_z_length    = 0:        decimal(9,9) unsigned           # (m) length of tip along z-axis
-    electrode_tip_profile     = 'linear': enum('linear','curved','sharp') # tip profile
-    electrode_tip_insulation  = 0:        decimal(9,9) unsigned           # (m) insulation coverage, starting from tip bottom
-    """
-
-    contents = [
-        #id  |base-x   |base-y   |base-z   |base shape |base ins. |base rot. |tip-z   |tip prof. |tip ins.
-        [0,   12e-6,    12e-6,    0,        'cuboid',   0,         0,         0,       'linear',  0],        # flat square (e.g., Neuropixels)
-        [1,   15e-6,    15e-6,    0,        'cylinder', 0,         0,         0,       'linear',  0],        # flat circle (e.g., S-Probes)
-        [2,   100e-6,   100e-6,   0,        'cylinder', 0,         0,         1.5e-3,  'sharp',   0],        # cone (e.g., Utah array)
-        [3,   100e-6,   100e-6,   139.5e-3, 'cylinder', 129.5e-3,  0,         0.5e-3,  'sharp',   0.4e-3],   # sharp cylinder w/ insulation (e.g., FHC sharp electrode)
-        [4,   50e-6,    50e-6,    123e-3,   'cuboid',   0,         0,         2e-3,    'linear',  0],        # blunt cylinder w/ insulation (e.g., Natus hook-wire stock)
-        [5,   50e-6,    50e-6,    120e-3,   'cuboid',   0,         0,         5e-3,    'linear',  3e-3],     # blunt cylinder w/ insulation (e.g., Natus hook-wire stock)
-    ]
-
-    def plot(self, center_coords, resolution=100):
-
-        assert len(self) == 1, 'Specify one entry for plotting'
-
-        # fetch electrode parameters
-        params = self.fetch1()
-
-        # ---------
-        # PLOT BASE
-        # ---------
-
-        # base axes lengths
-        base_axes_lengths = np.array([v for k,v in params.items() if re.search(r'base_\w_length',k) is not None])
-
-        fig = plt.figure()
-
-        # plot 2D
-        if params['electrode_base_z_length'] == params['electrode_tip_z_length'] == 0:
-
-            # base coordinates
-            if params['electrode_base_shape'] == 'cuboid': # rectangle
-
-                base_coords = (base_axes_lengths * np.array([
-                    [ 0.5,-0.5,0],
-                    [ 0.5, 0.5,0],
-                    [-0.5, 0.5,0],
-                    [-0.5,-0.5,0]])).T
-                base_coords = np.concatenate((base_coords, base_coords[:,0,None]), axis=1)
-
-            else: # ellipse
-
-                theta = np.linspace(0, 2*np.pi, resolution)
-                base_coords = np.concatenate((\
-                    base_axes_lengths[0]/2 * np.cos(theta)[:,np.newaxis],\
-                    base_axes_lengths[1]/2 * np.sin(theta)[:,np.newaxis],\
-                    np.zeros((len(theta),1))), axis=1).T
-
-            # plot base at each center
-            for center in center_coords:
-                plt.plot(center[0]+base_coords[0,:], center[1]+base_coords[1,:], 'k')
-
-        else: # plot 3D
-
-            ax = fig.gca(projection='3d')
-
-            if params['electrode_base_shape'] == 'cuboid': # cuboid
-
-                plot_shape = 'cuboid'
-
-                # --------
-                # PLOT TIP
-                # --------
-
-                if params['electrode_tip_profile'] == 'linear':
-
-                    plot_shape = 'cuboid'
-
-                elif params['electrode_tip_profile'] == 'curved':
-
-                    plot_shape = 'pyramid with curved faces'
-
-                else: # sharp
-
-                    plot_shape = 'pyramid'
-            
-
-            else: # elliptic cylinder
-
-                z = np.linspace(0, base_axes_lengths[2], resolution)
-                theta = np.linspace(0, 2*np.pi, resolution)
-                theta_grid, z_grid = np.meshgrid(theta, z)
-                x_grid = base_axes_lengths[0]/2 * np.cos(theta_grid)
-                y_grid = base_axes_lengths[1]/2 * np.sin(theta_grid)
-                
-                for center in center_coords:
-
-                    # plot sides
-                    ax.plot_surface(center[0]+x_grid, center[1]+y_grid, center[2]+z_grid)
-
-                    # overlay insulation
-                    
-                    # plot bottom
-                    bottom = patches.Ellipse((center[0],center[1]), base_axes_lengths[0], base_axes_lengths[1])
-                    ax.add_patch(bottom)
-                    art3d.pathpatch_2d_to_3d(bottom)
-
-                # --------
-                # PLOT TIP
-                # --------
-
-                if params['electrode_tip_profile'] == 'linear':
-
-                    plot_shape = 'cylinder'
-
-                elif params['electrode_tip_profile'] == 'curved':
-
-                    plot_shape = 'dome'
-
-                else: # sharp
-
-                    plot_shape = 'cone'
-
+# =======
+# LEVEL 1
+# =======
 
 @schema
 class ElectrodeArrayModel(dj.Lookup):
     definition = """
     # Model of an electrode array
-    electrode_array:               varchar(32)  # model name (e.g., Wire, Utah, Neuropixels)
-    electrode_array_version:       varchar(32)
+    electrode_array_model:              varchar(32)            # electrode array model name
+    electrode_array_model_version:      varchar(32)            # electrode array model version
     ---
-    electrode_array_manufacturer: varchar(255)
-    tissue_type: enum('brain','muscle') # tissue array used to record from
-    invasive: bool
+    electrode_array_model_manufacturer: varchar(255)           # electrode array model manufacturer
+    recording_tissue:                   enum('brain','muscle') # tissue type array used to record from
+    invasive:                           bool                   # whether array is for invasive (True) or surface (False) recordings
     """
 
     class Shank(dj.Part):
         definition = """
         -> master
-        shank: int unsigned # shank index
+        shank_idx:          int unsigned # shank index
         ---
-        shank_x = 0:        decimal(9,9) # (m) shank center x-coordinate relative to origin
-        shank_y = 0:        decimal(9,9) # (m) shank center y-coordinate relative to origin
-        shank_z = 0:        decimal(9,9) # (m) shank center z-coordinate relative to origin
-        shank_x_length = 0: decimal(9,9) # (m) length of shank along x-axis
-        shank_y_length = 0: decimal(9,9) # (m) length of shank along y-axis
-        shank_z_length = 0: decimal(9,9) # (m) length of shank along z-axis
+        shank_x = 0:        decimal(9,9) # shank center x-coordinate relative to origin (m)
+        shank_y = 0:        decimal(9,9) # shank center y-coordinate relative to origin (m)
+        shank_z = 0:        decimal(9,9) # shank center z-coordinate relative to origin (m)
+        shank_x_length = 0: decimal(9,9) # length of shank along x-axis (m)
+        shank_y_length = 0: decimal(9,9) # length of shank along y-axis (m)
+        shank_z_length = 0: decimal(9,9) # length of shank along z-axis (m)
         """
 
     class Electrode(dj.Part):
         definition = """
         -> master.Shank
-        electrode: int unsigned # electrode index
+        electrode_idx: int unsigned # electrode index
         ---
-        electrode_x: decimal(9,9) # (m) electrode center x-coordinate relative to shank
-        electrode_y: decimal(9,9) # (m) electrode center y-coordinate relative to shank
+        electrode_x:   decimal(9,9) # electrode center x-coordinate relative to shank center (m)
+        electrode_y:   decimal(9,9) # electrode center y-coordinate relative to shank center (m)
         -> ElectrodeGeometry
         """
 
     contents = [
-        ['Hook-Wire',   'paired',    'Natus Medical Inc.',     'muscle', True],
-        ['Neuropixels', 'nhp demo',  'IMEC',                   'brain',  True],
-        ['Neuropixels', 'nhp 1.0',   'IMEC',                   'brain',  True],
-        ['S-Probe',     '32 chan',   'Plexon',                 'brain',  True],
-        ['Utah',        '96 chan',   'Blackrock Microsystems', 'brain',  True]
+        #model name    |model version |model manufacturer       |recording tissue |invasive
+        ['Hook-Wire',   'paired',      'Natus Medical Inc.',     'muscle',         True],
+        ['Neuropixels', 'nhp demo',    'IMEC',                   'brain',          True],
+        ['Neuropixels', 'nhp 1.0',     'IMEC',                   'brain',          True],
+        ['S-Probe',     '32 chan',     'Plexon',                 'brain',          True],
+        ['Utah',        '96 chan',     'Blackrock Microsystems', 'brain',          True]
     ]
 
     def build(self):
@@ -312,7 +215,7 @@ class ElectrodeArrayModel(dj.Lookup):
 
                 self.Shank.insert1(dict(
                     **array_key,
-                    shank = shank_idx,
+                    shank_idx = shank_idx,
                     shank_x = Decimal(shank_spacing[0]) * shank_coords[0],
                     shank_y = Decimal(shank_spacing[1]) * shank_coords[1],
                     shank_z = Decimal(shank_spacing[2]) * shank_coords[2],
@@ -327,113 +230,119 @@ class ElectrodeArrayModel(dj.Lookup):
                 # offset to center electrode grid horizontally on the shank
                 elec_grid_x_center = Decimal((shank['electrode_grid_spacing'][0] * (shank['electrode_grid_shape'][0] - 1))/2)
 
-                for elec, elec_coords in enumerate(np.ndindex(shank['electrode_grid_shape'])):
+                for elec_idx, elec_coords in enumerate(np.ndindex(shank['electrode_grid_shape'])):
 
                     elec_keys.append(dict(
                         **array_key,
-                        shank = shank_idx,
-                        electrode = elec,
+                        shank_idx = shank_idx,
+                        electrode_idx = elec_idx,
                         electrode_x = Decimal(shank['electrode_grid_spacing'][0]) * elec_coords[0] - elec_grid_x_center,
                         electrode_y = Decimal(shank['electrode_grid_spacing'][1]) * elec_coords[1],
                         **elec_geom_key
                     ))
 
                 self.Electrode.insert(elec_keys)
-                
-# -------------------------------------------------------------------------------------------------------------------------------
-# LEVEL 1
-# -------------------------------------------------------------------------------------------------------------------------------
-
-@schema
-class ElectrodeArray(dj.Lookup):
-    definition = """
-    -> ElectrodeArrayModel
-    electrode_array_id: int unsigned # unique ID number
-    ---
-    electrode_array_serial = null: varchar(255) # serial number
-    """
-
+        
 
 @schema
 class Hardware(dj.Lookup):
     definition = """
-    hardware:                       varchar(32)   # hardware name
+    hardware:                       varchar(32)  # hardware name
     ---
-    -> EquipmentCategory.proj(hardware_category = 'equipment_category')
-    hardware_model:                 varchar(255)
-    hardware_manufacturer:          varchar(255)
-    hardware_manufacturer_location: varchar(255)
-    hardware_manual = null:         varchar(255)  # manual file path (replace with attachment)
+    -> EquipmentCategory
+    hardware_model:                 varchar(255) # hardware model name
+    hardware_manufacturer:          varchar(255) # hardware manufacturer
+    hardware_manufacturer_location: varchar(255) # hardware manufacturer location
+    hardware_manual = '':           varchar(255) # hardware manual file path
     """
 
     class Parameter(dj.Part):
         definition = """
         -> master
-        -> Parameter
+        -> EquipmentParameter
         ---
-        parameter_value: float
+        equipment_parameter_value: float
         """
 
     contents = [
-        ['Speedgoat',     'task controller',         'Performance real-time target machine', 'Speedgoat GmbH',              'Liebefeld, Switzerland',    ''],
-        ['Cerebus',       'neural signal processor', 'LB 0028',                              'Blackrock Microsystems',      'Salt Lake City, UT',        '/srv/locker/churchland/General/equipment-manuals/CerebusNSP.pdf'],
-        ['CereStim',      'neural stimulator',       'LB 0314',                              'Blackrock Microsystems',      'Salt Lake City, UT',        '/srv/locker/churchland/General/equipment-manuals/CerestimR96.pdf'],
-        ['StimPulse',     'neural stimulator',       '55-60-0',                              'FHC, Inc',                    'Bowdoin, ME',               '/srv/locker/churchland/General/equipment-manuals/StimPulse.pdf'],
-        ['Polaris',       'motion tracker',          'Spectra',                              'Northern Digital',            'Waterloo, Ontario, Canada', '/srv/locker/churchland/General/equipment-manuals/Polaris.pdf'],
-        ['5lb Load Cell', 'load cell',               'LRM200',                               'FUTEK',                       'Irvine, CA',                '/srv/locker/churchland/General/equipment-manuals/LRM200_5lb.pdf'],
-        ['DAM8',          'bioamplifier',            'ISO-DAM8A',                            'World Precision Instruments', 'Sarasota, FL',              '/srv/locker/churchland/General/equipment-manuals/ISODAM8A.pdf'],
-        ['CILUX chamber', 'chamber',                 '6-IAM-J0',                             'Crist Instrument Co Inc',     'Hagerstown, MD',            '']
+        #hardware name   |equipment category        |hardware model                         |hardware manufacturer         |hardware manufacturer location  |hardware manual path
+        ['Speedgoat',     'task controller',         'Performance real-time target machine', 'Speedgoat GmbH',              'Liebefeld, Switzerland',        ''],
+        ['Cerebus',       'neural signal processor', 'LB 0028',                              'Blackrock Microsystems',      'Salt Lake City, UT',            '/srv/locker/churchland/General/equipment-manuals/CerebusNSP.pdf'],
+        ['CereStim',      'neural stimulator',       'LB 0314',                              'Blackrock Microsystems',      'Salt Lake City, UT',            '/srv/locker/churchland/General/equipment-manuals/CerestimR96.pdf'],
+        ['StimPulse',     'neural stimulator',       '55-60-0',                              'FHC, Inc',                    'Bowdoin, ME',                   '/srv/locker/churchland/General/equipment-manuals/StimPulse.pdf'],
+        ['Polaris',       'motion tracker',          'Spectra',                              'Northern Digital',            'Waterloo, Ontario, Canada',     '/srv/locker/churchland/General/equipment-manuals/Polaris.pdf'],
+        ['5lb Load Cell', 'load cell',               'LRM200',                               'FUTEK',                       'Irvine, CA',                    '/srv/locker/churchland/General/equipment-manuals/LRM200_5lb.pdf'],
+        ['DAM8',          'bioamplifier',            'ISO-DAM8A',                            'World Precision Instruments', 'Sarasota, FL',                  '/srv/locker/churchland/General/equipment-manuals/ISODAM8A.pdf'],
+        ['CILUX chamber', 'chamber',                 '6-IAM-J0',                             'Crist Instrument Co Inc',     'Hagerstown, MD',                '']
     ]
 
 
 @schema
 class Software(dj.Lookup):
     definition = """
-    software:                       varchar(32)   # software name
-    software_version:               varchar(32)
+    software:                       varchar(32)  # software name
+    software_version:               varchar(32)  # software release version
     ---
-    -> EquipmentCategory.proj(software_category = 'equipment_category')
-    software_manufacturer:          varchar(255)
-    software_manufacturer_location: varchar(255)
-    software_manual = null:         varchar(255)  # manual file path (replace with attachment)
+    -> EquipmentCategory
+    software_manufacturer:          varchar(255) # software manufacturer
+    software_manufacturer_location: varchar(255) # software manufacturer
+    software_manual = '':           varchar(255) # software manual file path
     """
 
     class Parameter(dj.Part):
         definition = """
         -> master
-        -> Parameter
+        -> EquipmentParameter
         ---
-        parameter_value: float
+        equipment_parameter_value: float
         """
 
     contents = [
-        ['Simulink',     '',      'task controller',  'MathWorks',          'Natick, MA',        ''],
-        ['Plexon OFS',   '4.5.0', 'spike sorter',     'Plexon',             'Dallas, TX',        ''],
-        ['KiloSort',     '1.0',   'spike sorter',     'Cortexlab',          'UCL',               ''],
-        ['Unity 3D',     '',      'graphics',         'Unity Technologies', 'San Francisco, CA', ''],
-        ['Psychtoolbox', '3.0',   'graphics',         'open source',        '',                  '']
+        #software name  |software version |equipment category |software manufacturer |software manufacturer location |software manufacturer location  |software manual path
+        ['Simulink',     '',               'task controller',  'MathWorks',           'Natick, MA',                   ''],
+        ['Plexon OFS',   '4.5.0',          'spike sorter',     'Plexon',              'Dallas, TX',                   ''],
+        ['KiloSort',     '1.0',            'spike sorter',     'Cortexlab',           'UCL',                          ''],
+        ['Unity 3D',     '',               'graphics',         'Unity Technologies',  'San Francisco, CA',            ''],
+        ['Psychtoolbox', '3.0',            'graphics',         'open source',         '',                             '']
     ]
 
-# -------------------------------------------------------------------------------------------------------------------------------
+
+# =======
 # LEVEL 2
-# -------------------------------------------------------------------------------------------------------------------------------
+# =======
+
+@schema
+class ElectrodeArray(dj.Lookup):
+    definition = """
+    -> ElectrodeArrayModel
+    electrode_array_id:          int unsigned # electrode array ID number
+    ---
+    electrode_array_serial = '': varchar(255) # electrode array serial number
+    """
+
+
+# =======
+# LEVEL 3
+# =======
 
 @schema
 class ElectrodeArrayConfig(dj.Lookup):
     definition = """
+    # Mapping of electrode array electrodes to channels on a data array
     -> ElectrodeArray
-    electrode_array_config_id: int unsigned # unique configuration ID
+    electrode_array_config_id: int unsigned # electrode array configuration ID number
     """
 
     class Channel(dj.Part):
         definition = """
+        # Channel on recording file
         -> master
-        channel: int unsigned # channel index (i.e., on recording file)
+        channel_idx: int unsigned # channel index on data array
         """
 
     class Electrode(dj.Part):
         definition = """
-        # Channel electrode(s) (monopolar or differential configurations)
+        # Electrode on electrode array (one or more per channel for monopolar or differential configurations)
         -> master.Channel
         -> ElectrodeArrayModel.Electrode
         """

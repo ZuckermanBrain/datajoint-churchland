@@ -186,13 +186,13 @@ class SyncBlock(dj.Imported):
     """
 
     key_source = acquisition.EphysRecording \
-        & (acquisition.EphysRecording.Channel & {'channel_label':'sync'})
+        & (acquisition.EphysRecording.Channel & {'channel_type':'sync'})
 
     def make(self, key):
 
         # sync channel ID
-        sync_rel = acquisition.EphysRecording.Channel & key & {'channel_label': 'sync'}
-        sync_id, sync_idx = sync_rel.fetch1('channel_id', 'channel_index')
+        sync_rel = acquisition.EphysRecording.Channel & key & {'channel_type': 'sync'}
+        sync_id, sync_idx = sync_rel.fetch1('channel_id', 'channel_idx')
 
         # fetch local ephys recording file path and sample rate
         ephys_file_path, fs_ephys = (acquisition.EphysRecording & key).fetch1('ephys_file_path', 'ephys_sample_rate')

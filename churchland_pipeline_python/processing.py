@@ -1,25 +1,26 @@
 import datajoint as dj
-import re, inspect, neo
+import os, re, inspect, math
+import neo
+import numpy as np
 from . import acquisition, equipment, reference
 from .utilities import datasync, datajointutils as dju
-import math, numpy as np
 from scipy import signal
 
 schema = dj.schema('churchland_analyses_processing')
 
-# -------------------------------------------------------------------------------------------------------------------------------
+# =======
 # LEVEL 0
-# -------------------------------------------------------------------------------------------------------------------------------
+# =======
 
 @schema
 class BrainSort(dj.Manual):
     definition = """
     # Spike sorted brain data
     -> acquisition.BrainChannelGroup
-    brain_sort_id: tinyint unsigned
+    brain_sort_id: tinyint unsigned  # brain sort ID number
     ---
     -> equipment.Software
-    brain_sort_path: varchar(1012) # path to sort files
+    brain_sort_path: varchar(1012)   # path to sort files
     """
 
 
@@ -28,10 +29,10 @@ class EmgSort(dj.Manual):
     definition = """
     # Spike sorted EMG data
     -> acquisition.EmgChannelGroup
-    emg_sort_id: tinyint unsigned
+    emg_sort_id: tinyint unsigned  # emg sort ID number
     ---
     -> equipment.Software
-    emg_sort_path: varchar(1012) # path to sort files
+    emg_sort_path: varchar(1012)   # path to sort files
     """
 
 
@@ -39,7 +40,7 @@ class EmgSort(dj.Manual):
 class Filter(dj.Lookup):
     definition = """
     # Filter bank
-    filter_id: int unsigned # unique filter identifier
+    filter_id: int unsigned # filter ID number
     """
     
     class Beta(dj.Part):
@@ -47,9 +48,9 @@ class Filter(dj.Lookup):
         # Beta kernel
         -> master
         ---
-        duration = 0.275: decimal(5,5) unsigned # interval kernel is defined over (s)
-        alpha = 3: decimal(5,4) unsigned # shape parameter
-        beta = 5: decimal(5,4) unsigned # shape parameter
+        duration = 0.275: decimal(5,5) unsigned # distribution support interval (s)
+        alpha = 3:        decimal(9,4) unsigned # shape parameter
+        beta = 5:         decimal(9,4) unsigned # shape parameter
         """ 
 
         def filter(self, y, fs, axis=0, normalize=False):
@@ -108,8 +109,8 @@ class Filter(dj.Lookup):
         definition = """
         -> master
         ---
-        order = 2: tinyint unsigned # filter order
-        low_cut = 500: smallint unsigned # low-cut frequency (Hz)
+        order = 2:       tinyint unsigned  # filter order
+        low_cut = 500:   smallint unsigned # low-cut frequency (Hz)
         high_cut = null: smallint unsigned # high-cut frequency (Hz)
         """
 
@@ -149,7 +150,7 @@ class Filter(dj.Lookup):
         -> master
         ---
         sd = 25e-3: decimal(18,9) unsigned # filter standard deviation (s)
-        width = 4: tinyint unsigned # filter width (multiples of standard deviations)
+        width = 4:  tinyint unsigned       # filter width (multiples of sd)
         """
 
         def filter(self, y, fs, axis=0, normalize=False):
@@ -181,7 +182,7 @@ class SyncBlock(dj.Imported):
     -> acquisition.EphysRecording
     sync_block_start: int unsigned # sample index (ephys time base) corresponding to the beginning of the sync block
     ---
-    sync_block_time: double # encoded simulation time (Speedgoat time base)
+    sync_block_time: double        # encoded simulation time (Speedgoat time base)
     """
 
     key_source = acquisition.EphysRecording \
@@ -195,7 +196,7 @@ class SyncBlock(dj.Imported):
 
         # fetch local ephys recording file path and sample rate
         ephys_file_path, fs_ephys = (acquisition.EphysRecording & key).fetch1('ephys_file_path', 'ephys_sample_rate')
-        ephys_file_path = (reference.EngramPath & {'engram_tier': 'locker'}).ensurelocal(ephys_file_path)
+        ephys_file_path = (reference.EngramTier & {'engram_tier': 'locker'}).ensurelocal(ephys_file_path)
 
         # read NSx file
         reader = neo.rawio.BlackrockRawIO(ephys_file_path)
@@ -226,9 +227,10 @@ class SyncBlock(dj.Imported):
 
         self.insert(block_key)
 
-# -------------------------------------------------------------------------------------------------------------------------------
+
+# =======
 # LEVEL 1
-# -------------------------------------------------------------------------------------------------------------------------------
+# =======
 
 @schema
 class MotorUnit(dj.Imported):
@@ -236,10 +238,10 @@ class MotorUnit(dj.Imported):
     # Sorted motor unit
     -> acquisition.EmgChannelGroup
     -> EmgSort
-    motor_unit_id: smallint unsigned # unique unit ID
+    motor_unit_id:         smallint unsigned # motor unit ID number
     ---
     -> equipment.Software
-    motor_unit_session_spikes: longblob # array of spike indices
+    motor_unit_spikes_raw: longblob          # unprocessed spike indices
     """
         
     class Template(dj.Part):
@@ -248,7 +250,7 @@ class MotorUnit(dj.Imported):
         -> master
         -> acquisition.EmgChannelGroup.Channel
         ---
-        motor_unit_template: longblob # waveform template
+        motor_unit_template: longblob # motor unit action potential waveform template
         """
 
 
@@ -258,10 +260,10 @@ class Neuron(dj.Imported):
     # Sorted brain neuron
     -> acquisition.BrainChannelGroup
     -> BrainSort
-    neuron_id: smallint unsigned # unique unit ID
+    neuron_id:         smallint unsigned       # neuron ID number
     ---
-    neuron_isolation: enum('single', 'multi') # neuron isolation quality (single- or multi-unit)
-    neuron_session_spikes: longblob # array of spike indices
+    neuron_isolation:  enum('single', 'multi') # neuron isolation quality (single- or multi-unit)
+    neuron_spikes_raw: longblob                # unprocessed spike indices
     """
         
     class Template(dj.Part):
@@ -270,5 +272,5 @@ class Neuron(dj.Imported):
         -> master
         -> acquisition.BrainChannelGroup.Channel
         ---
-        neuron_template: longblob # waveform template
+        neuron_template: longblob # neuron action potential waveform template
         """

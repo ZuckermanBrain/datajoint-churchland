@@ -16,7 +16,7 @@ class Chamber(dj.Manual):
     chamber_id:   tinyint unsigned # chamber ID number
     ---
     chamber_date: date             # chamber implantation date
-    chmaber_x:    decimal(5,3)     # chamber center x-coordinate (+/-, lateral/medial) on brain (mm)
+    chamber_x:    decimal(5,3)     # chamber center x-coordinate (+/-, lateral/medial) on brain (mm)
     chamber_y:    decimal(5,3)     # chamber center y-coordinate (+/-, anterior/posterior) on brain (mm)
     -> equipment.Hardware          # physical chamber and its geometry
     """

@@ -68,13 +68,14 @@ class EquipmentParameter(dj.Lookup):
     definition = """
     equipment_parameter:                  varchar(32)  # equipment parameter name
     ---
-    equipment_parameter_units = '':       varchar(32)  # equipment parameter units (full name)
+    equipment_parameter_units = '':       varchar(32)  # equipment parameter units
     equipment_parameter_description = '': varchar(255) # equipment parameter description
     """
 
     contents = [
-        ['force capacity', 'Newtons', 'maximum force capacity'],
-        ['voltage output', 'Volts',   'calibrated output signal']
+        ['force capacity', 'N', 'maximum force capacity'],
+        ['voltage output', 'V', 'calibrated output signal'],
+        ['diameter',       'm', 'equipment diameter']
     ]
 
 
@@ -126,12 +127,18 @@ class ElectrodeArrayModel(dj.Lookup):
         ['Utah',        '96 chan',     'Blackrock Microsystems', 'brain',          True]
     ]
 
-    def build(self):
+    def build(self, verbose: bool=False):
 
         # build arrays without electrodes
         key_source = (self - self.Electrode).fetch('KEY')
 
         for array_key in key_source:
+
+            if verbose:
+                print('Building {} {}'.format(
+                    array_key['electrode_array_model'], 
+                    array_key['electrode_array_model_version'])
+                )
 
             # specify array parameters
             if {'Hook-Wire', 'paired'} == set(array_key.values()):

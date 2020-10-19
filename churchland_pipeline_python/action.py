@@ -16,7 +16,7 @@ class Chamber(dj.Manual):
     chamber_id:   tinyint unsigned # chamber ID number
     ---
     chamber_date: date             # chamber implantation date
-    chmaber_x:    decimal(5,3)     # chamber center x-coordinate (+/-, medial/lateral) on brain (mm)
+    chmaber_x:    decimal(5,3)     # chamber center x-coordinate (+/-, lateral/medial) on brain (mm)
     chamber_y:    decimal(5,3)     # chamber center y-coordinate (+/-, anterior/posterior) on brain (mm)
     -> equipment.Hardware          # physical chamber and its geometry
     """
@@ -48,7 +48,7 @@ class Mri(dj.Manual):
         ---
         brain_hemisphere: enum('left', 'right', 'midline') # brain hemisphere or midline
         brain_surface:    bool                             # whether landmark is on the brain surface (True) or deep (i.e., in a sulcus)
-        landmark_x:       decimal(6,3)                     # landmark x-coordinate (+/-, medial/lateral) (mm)
+        landmark_x:       decimal(6,3)                     # landmark x-coordinate (+/-, lateral/medial) (mm)
         landmark_y:       decimal(6,3)                     # landmark y-coordinate (+/-, anterior/posterior) (mm)
         landmark_z:       decimal(6,3)                     # landmark z-coordinate (+/-, dorsal/ventral) (mm)
         origin = 0:       bool                             # whether landmark should be used to define the origin
@@ -100,7 +100,7 @@ class BurrHole(dj.Manual):
     burr_hole_id:             smallint unsigned # burr hole ID number
     ---
     burr_hole_date:           date              # burr hole procedure date
-    burr_hole_x:              decimal(5,3)      # burr hole center x-coordinate (+/-, medial/lateral) relative to chamber center (mm)
+    burr_hole_x:              decimal(5,3)      # burr hole center x-coordinate (+/-, lateral/medial) relative to chamber center (mm)
     burr_hole_y:              decimal(5,3)      # burr hole center y-coordinate (+/-, anterior/posterior) relative to chamber center (mm)
     burr_hole_diameter = 3.5: decimal(5,3)      # burr hole diameter (mm)
     burr_hole_notes = '':     varchar(4095)     # burr hole notes

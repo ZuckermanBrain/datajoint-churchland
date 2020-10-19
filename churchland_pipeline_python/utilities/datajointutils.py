@@ -74,6 +74,26 @@ def getparents(table: DataJointTable, context: FrameType=None) -> List[DataJoint
     return parents
 
 
+def getparts(master_table: DataJointTable, context: FrameType=None) -> List[DataJointTable]:
+    """Gets all part tables of a master table."""
+
+    # get table context
+    if not context:
+        context = getcontext(master_table)
+
+    # full master table name
+    master_name = master_table.full_table_name
+
+    # full part table names
+    part_names = [table_name for table_name in master_table().descendants() 
+        if (table_name != master_name and table_name[:-2].startswith(master_name[:-2]))]
+
+    # get part tables
+    part_tables = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in part_names]
+
+    return part_tables
+
+
 def insertpart(master: DataJointTable, part_name: str, **kwargs) -> None:
     """Inserts an entry to master-part tables, given the master table, the part table name,
     and a set of keyword arguments containing the part table attributes. Checks to ensure that

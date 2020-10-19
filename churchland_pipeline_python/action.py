@@ -1,5 +1,6 @@
 import datajoint as dj
 from . import lab, reference, equipment
+import pandas as pd
 
 schema = dj.schema('churchland_common_action')
 
@@ -52,6 +53,38 @@ class Mri(dj.Manual):
         landmark_z:       decimal(6,3)                     # landmark z-coordinate (+/-, dorsal/ventral) (mm)
         origin = 0:       bool                             # whether landmark should be used to define the origin
         """
+        
+    @classmethod
+    def insert_from_file(self,
+        file_path: str, 
+        monkey: str, 
+        user_uni: str, 
+        mri_date: str, 
+        mri_notes: str=''
+    ) -> None:
+        """Inserts MRI entries and landmarks by reading data from a csv file."""
+
+        # add entry to master table
+        master_key = dict(
+            monkey=monkey,
+            user_uni=user_uni,
+            mri_date=mri_date,
+        )
+
+        self.insert1(dict(**master_key, mri_notes=mri_notes))
+
+        # load file as data frame
+        landmark_df = pd.read_csv(file_path)
+
+        # convert data frame to list of keys
+        landmark_keys = landmark_df.to_dict(orient='records')
+
+        # append master key to landmark keys
+        landmark_keys = [dict(**master_key,**k) for k in landmark_keys]
+
+        # insert to part table
+        self.Landmark.insert(landmark_keys)
+
 
 
 # =======

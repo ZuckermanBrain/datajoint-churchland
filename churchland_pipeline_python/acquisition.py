@@ -279,7 +279,8 @@ class EphysRecording(dj.Imported):
             blackrock_files = list(os.listdir(blackrock_path))
 
             # path to NSx files
-            nsx_files = [f for f in blackrock_files if re.search(r'.*(emg|neu|neu_emg)_00\d\.ns\d',f) is not None]
+            nsx_files = [f for f in blackrock_files \
+                if re.search(r'.*(emg|neu|neu_emg)_00\d\.ns\d',f) is not None and 'settling' not in f]
             nsx_path = [blackrock_path + f for f in nsx_files]
 
             for i, pth in enumerate(nsx_path):
@@ -330,6 +331,18 @@ class EphysRecording(dj.Imported):
                     self.Channel.insert1(key)
 
 
+@schema
+class EphysStimulation(dj.Manual):
+    definition = """
+    # Electrophysiological stimulation
+    -> Session
+    ephys_stimulation_probe_id: tinyint unsigned  # ephys stimulation probe ID number
+    ---
+    -> equipment.ElectrodeArray
+    probe_depth = null:         decimal(5,3)      # depth of neural probe tip relative to cortical surface (mm)
+    """
+
+
 # =======
 # LEVEL 3
 # =======
@@ -342,7 +355,7 @@ class BrainChannelGroup(dj.Manual):
     brain_channel_group_id:         tinyint unsigned      # brain channel group ID number
     ---
     -> equipment.ElectrodeArray
-    -> action.BurrHole
+    -> [nullable] action.BurrHole
     brain_hemisphere:               enum('left', 'right') # brain hemisphere
     brain_channel_group_notes = '': varchar(4095)         # brain channel group notes
     probe_depth = null:             decimal(5,3)          # depth of neural probe tip relative to cortical surface (mm)

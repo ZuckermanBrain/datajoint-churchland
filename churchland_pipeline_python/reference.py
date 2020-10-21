@@ -126,10 +126,15 @@ class Muscle(dj.Lookup):
     """
 
     contents = [
+        ['LonBic', 'biceps',           'long'],
+        ['ShoBic', 'biceps',           'short'],
         ['AntDel', 'deltoid',          'anterior'],
         ['LatDel', 'deltoid',          'lateral'],
+        ['PosDel', 'deltoid',          'posterior'],
         ['ClaPec', 'pectoralis major', 'clavicular'],
         ['StePec', 'pectoralis major', 'sternal'],
+        ['SupTra', 'trapezius',        'superior'],
         ['LatTri', 'triceps',          'lateral'],
-        ['LatMed', 'triceps',          'medial']
+        ['LonTri', 'triceps',          'long'],
+        ['MedTri', 'triceps',          'medial']
     ]

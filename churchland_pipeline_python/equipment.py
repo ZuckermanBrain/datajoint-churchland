@@ -34,13 +34,17 @@ class ElectrodeGeometry(dj.Lookup):
     """
 
     contents = [
-        #id  |base shape |base-x   |base-y   |base-z   |base ins. |base rot. |tip prof. |tip-z   |tip ins.
-        [0,   'cuboid',   12e-6,    12e-6,    0,        0,         0,         'linear',  0,       0],        # flat square (e.g., Neuropixels)
-        [1,   'cylinder', 15e-6,    15e-6,    0,        0,         0,         'linear',  0,       0],        # flat circle (e.g., S-Probes)
-        [2,   'cylinder', 100e-6,   100e-6,   0,        0,         0,         'sharp',   1.5e-3,  0],        # cone (e.g., Utah array)
-        [3,   'cylinder', 100e-6,   100e-6,   139.5e-3, 129.5e-3,  0,         'sharp',   0.5e-3,  0.4e-3],   # sharp cylinder w/ insulation (e.g., FHC sharp electrode)
-        [4,   'cuboid',   50e-6,    50e-6,    123e-3,   0,         0,         'linear',  2e-3,    0],        # blunt cylinder w/ insulation (e.g., Natus hook-wire stock)
-        [5,   'cuboid',   50e-6,    50e-6,    120e-3,   0,         0,         'linear',  5e-3,    3e-3],     # blunt cylinder w/ insulation (e.g., Natus hook-wire stock)
+        #id  |base shape |base-x   |base-y   |base-z    |base ins. |base rot. |tip prof. |tip-z   |tip ins.
+        [0,   'cuboid',   12e-6,    12e-6,    0,         0,         0,         'linear',  0,       0],        # flat square (e.g., Neuropixels)
+        [1,   'cylinder', 15e-6,    15e-6,    0,         0,         0,         'linear',  0,       0],        # flat circle (e.g., S-Probes)
+        [2,   'cylinder', 100e-6,   100e-6,   0,         0,         0,         'sharp',   1.5e-3,  0],        # cone (e.g., Utah array)
+        [3,   'cylinder', 100e-6,   100e-6,   139.5e-3,  129.5e-3,  0,         'sharp',   0.5e-3,  0.4e-3],   # sharp cylinder w/ insulation (e.g., FHC sharp electrode)
+        [4,   'cuboid',   50e-6,    50e-6,    123e-3,    0,         0,         'linear',  2e-3,    0],        # blunt cylinder w/ insulation (e.g., Natus hook-wire stock)
+        [5,   'cuboid',   50e-6,    50e-6,    120e-3,    0,         0,         'linear',  5e-3,    3e-3],     # blunt cylinder w/ insulation (e.g., Natus hook-wire stock)
+        [4,   'cuboid',   50e-6,    50e-6,    124e-3,    0,         0,         'linear',  1e-3,    0],        # blunt cylinder w/ insulation (Natus hook-wire QF 1,1)
+        [4,   'cuboid',   50e-6,    50e-6,    117e-3,    0,         0,         'linear',  8e-3,    7e-3],     # blunt cylinder w/ insulation (Natus hook-wire QF 1,2)
+        [5,   'cuboid',   50e-6,    50e-6,    121.75e-3, 0,         0,         'linear',  3.25e-3, 2.75e-3],  # blunt cylinder w/ insulation (Natus hook-wire QF 2,1)
+        [5,   'cuboid',   50e-6,    50e-6,    119.75e-3, 0,         0,         'linear',  5.25e-3, 4.75e-3]   # blunt cylinder w/ insulation (Natus hook-wire QF 2,2)
     ]
 
 
@@ -121,9 +125,11 @@ class ElectrodeArrayModel(dj.Lookup):
     contents = [
         #model name    |model version |model manufacturer       |recording tissue |invasive
         ['Hook-Wire',   'paired',      'Natus Medical Inc.',     'muscle',         True],
+        ['Hook-Wire',   'quad',        'custom',                 'muscle',         True],
         ['Neuropixels', 'nhp demo',    'IMEC',                   'brain',          True],
         ['Neuropixels', 'nhp 1.0',     'IMEC',                   'brain',          True],
         ['S-Probe',     '32 chan',     'Plexon',                 'brain',          True],
+        ['V-Probe',     '24 chan',     'Plexon',                 'brain',          True],
         ['Utah',        '96 chan',     'Blackrock Microsystems', 'brain',          True]
     ]
 
@@ -150,15 +156,50 @@ class ElectrodeArrayModel(dj.Lookup):
                         shank_dims = (0, 0, 0),
                         electrode_grid_shape = (1, 1),
                         electrode_grid_spacing = (0, 0),
-                        electrode_geometry = {'electrode_base_x_length': 50e-6, 'electrode_tip_z_length': 2e-3}
+                        electrode_geometry = {'electrode_base_z_length': 123e-3, 'electrode_tip_z_length': 2e-3}
                     ),
                     dict(
                         shank_dims = (0, 0, 0),
                         electrode_grid_shape = (1, 1),
                         electrode_grid_spacing = (0, 0),
-                        electrode_geometry = {'electrode_base_x_length': 50e-6, 'electrode_tip_z_length': 5e-3}
+                        electrode_geometry = {'electrode_base_z_length': 120e-3, 'electrode_tip_z_length': 5e-3}
                     )
                 ]).reshape((1, 2, 1))
+
+            elif {'Hook-Wire', 'quad'} == set(array_key.values()):
+                
+                # shank grid and geometries
+                shank_spacing = (60e-6, 60e-6, 0)
+                shank_grid = np.array([
+                    [
+                        dict(
+                            shank_dims = (0, 0, 0),
+                            electrode_grid_shape = (1, 1),
+                            electrode_grid_spacing = (0, 0),
+                            electrode_geometry = {'electrode_base_z_length': 124e-3, 'electrode_tip_z_length': 1e-3}
+                        ),
+                        dict(
+                            shank_dims = (0, 0, 0),
+                            electrode_grid_shape = (1, 1),
+                            electrode_grid_spacing = (0, 0),
+                            electrode_geometry = {'electrode_base_z_length': 121.75e-3, 'electrode_tip_z_length': 3.25e-3}
+                        )
+                    ],
+                    [
+                        dict(
+                            shank_dims = (0, 0, 0),
+                            electrode_grid_shape = (1, 1),
+                            electrode_grid_spacing = (0, 0),
+                            electrode_geometry = {'electrode_base_z_length': 117e-3, 'electrode_tip_z_length': 8e-3}
+                        ),
+                        dict(
+                            shank_dims = (0, 0, 0),
+                            electrode_grid_shape = (1, 1),
+                            electrode_grid_spacing = (0, 0),
+                            electrode_geometry = {'electrode_base_z_length': 119.75e-3, 'electrode_tip_z_length': 5.25e-3}
+                        )
+                    ]
+                ]).reshape((2, 2, 1))
 
             elif {'Neuropixels', 'nhp demo'} == set(array_key.values()):
 
@@ -198,6 +239,19 @@ class ElectrodeArrayModel(dj.Lookup):
                         electrode_geometry = {'electrode_base_x_length': 15e-6}
                     )
                 ]), (1, 32, 1))
+
+            elif {'V-Probe', '24 chan'} == set(array_key.values()):
+
+                # shank grid and geometries
+                shank_spacing = (0, 0, 0)
+                shank_grid = np.tile(np.array([
+                    dict(
+                        shank_dims = (260e-6, 260e-6, 100e-3),
+                        electrode_grid_shape = (1, 24),
+                        electrode_grid_spacing = (0, 100e-6),
+                        electrode_geometry = {'electrode_base_x_length': 15e-6}
+                    )
+                ]), (1, 24, 1))
 
             elif {'Utah', '96 chan'} == set(array_key.values()):
 

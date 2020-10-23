@@ -1,7 +1,7 @@
 import datajoint as dj
 import os, sys
 
-schema = dj.schema('churchland_common_reference')
+schema = dj.schema(dj.config.get('database.prefix') + 'churchland_common_reference')
 
 # ==================
 # RESEARCH COMPUTING

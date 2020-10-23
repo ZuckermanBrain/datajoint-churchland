@@ -2,7 +2,7 @@ import datajoint as dj
 from . import lab, reference, equipment
 import pandas as pd
 
-schema = dj.schema('churchland_common_action')
+schema = dj.schema(dj.config.get('database.prefix') + 'churchland_common_action')
 
 # =======
 # LEVEL 0

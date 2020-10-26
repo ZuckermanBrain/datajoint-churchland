@@ -10,7 +10,7 @@ import re
 import numpy as np
 from decimal import Decimal
 
-schema = dj.schema('churchland_common_equipment')
+schema = dj.schema(dj.config.get('database.prefix') + 'churchland_common_equipment')
 
 # =======
 # LEVEL 0
@@ -34,17 +34,19 @@ class ElectrodeGeometry(dj.Lookup):
     """
 
     contents = [
-        #id  |base shape |base-x   |base-y   |base-z    |base ins. |base rot. |tip prof. |tip-z   |tip ins.
-        [0,   'cuboid',   12e-6,    12e-6,    0,         0,         0,         'linear',  0,       0],        # flat square (e.g., Neuropixels)
-        [1,   'cylinder', 15e-6,    15e-6,    0,         0,         0,         'linear',  0,       0],        # flat circle (e.g., S-Probes)
-        [2,   'cylinder', 100e-6,   100e-6,   0,         0,         0,         'sharp',   1.5e-3,  0],        # cone (e.g., Utah array)
-        [3,   'cylinder', 100e-6,   100e-6,   139.5e-3,  129.5e-3,  0,         'sharp',   0.5e-3,  0.4e-3],   # sharp cylinder w/ insulation (e.g., FHC sharp electrode)
-        [4,   'cuboid',   50e-6,    50e-6,    123e-3,    0,         0,         'linear',  2e-3,    0],        # blunt cylinder w/ insulation (e.g., Natus hook-wire stock)
-        [5,   'cuboid',   50e-6,    50e-6,    120e-3,    0,         0,         'linear',  5e-3,    3e-3],     # blunt cylinder w/ insulation (e.g., Natus hook-wire stock)
-        [4,   'cuboid',   50e-6,    50e-6,    124e-3,    0,         0,         'linear',  1e-3,    0],        # blunt cylinder w/ insulation (Natus hook-wire QF 1,1)
-        [4,   'cuboid',   50e-6,    50e-6,    117e-3,    0,         0,         'linear',  8e-3,    7e-3],     # blunt cylinder w/ insulation (Natus hook-wire QF 1,2)
-        [5,   'cuboid',   50e-6,    50e-6,    121.75e-3, 0,         0,         'linear',  3.25e-3, 2.75e-3],  # blunt cylinder w/ insulation (Natus hook-wire QF 2,1)
-        [5,   'cuboid',   50e-6,    50e-6,    119.75e-3, 0,         0,         'linear',  5.25e-3, 4.75e-3]   # blunt cylinder w/ insulation (Natus hook-wire QF 2,2)
+        #id   |base shape |base-x   |base-y   |base-z    |base ins. |base rot. |tip prof. |tip-z   |tip ins.
+        [0,    'cuboid',   12e-6,    12e-6,    0,         0,         0,         'linear',  0,       0],        # flat square (e.g., Neuropixels)
+        [1,    'cylinder', 15e-6,    15e-6,    0,         0,         0,         'linear',  0,       0],        # flat circle (e.g., S-Probes)
+        [2,    'cylinder', 100e-6,   100e-6,   0,         0,         0,         'sharp',   1.5e-3,  0],        # cone (e.g., Utah array)
+        [3,    'cylinder', 100e-6,   100e-6,   139.5e-3,  129.5e-3,  0,         'sharp',   0.5e-3,  0.4e-3],   # sharp cylinder w/ insulation (e.g., FHC sharp electrode)
+        [4,    'cuboid',   50e-6,    50e-6,    123e-3,    0,         0,         'linear',  2e-3,    0],        # blunt cylinder w/ insulation (e.g., Natus hook-wire stock)
+        [5,    'cuboid',   50e-6,    50e-6,    120e-3,    0,         0,         'linear',  5e-3,    3e-3],     # blunt cylinder w/ insulation (e.g., Natus hook-wire stock)
+        [6,    'cuboid',   50e-6,    50e-6,    124e-3,    0,         0,         'linear',  1e-3,    0],        # blunt cylinder w/ insulation (Natus hook-wire QF 1,1)
+        [7,    'cuboid',   50e-6,    50e-6,    117e-3,    0,         0,         'linear',  8e-3,    7e-3],     # blunt cylinder w/ insulation (Natus hook-wire QF 1,2)
+        [8,    'cuboid',   50e-6,    50e-6,    121.75e-3, 0,         0,         'linear',  3.25e-3, 2.75e-3],  # blunt cylinder w/ insulation (Natus hook-wire QF 2,1)
+        [9,    'cuboid',   50e-6,    50e-6,    119.75e-3, 0,         0,         'linear',  5.25e-3, 4.75e-3],  # blunt cylinder w/ insulation (Natus hook-wire QF 2,2)
+        [10,   'cuboid',   50e-6,    50e-6,    123e-3,    0,         0,         'linear',  1e-3,    0],        # blunt cylinder w/ insulation (e.g., Natus hook-wire clipped)
+        [11,   'cuboid',   50e-6,    50e-6,    120e-3,    0,         0,         'linear',  4e-3,    3e-3]      # blunt cylinder w/ insulation (e.g., Natus hook-wire clipped)
     ]
 
 
@@ -126,6 +128,7 @@ class ElectrodeArrayModel(dj.Lookup):
         #model name    |model version |model manufacturer       |recording tissue |invasive
         ['Hook-Wire',   'paired',      'Natus Medical Inc.',     'muscle',         True],
         ['Hook-Wire',   'quad',        'custom',                 'muscle',         True],
+        ['Hook-Wire',   'clipped',     'custom',                 'muscle',         True],
         ['Neuropixels', 'nhp demo',    'IMEC',                   'brain',          True],
         ['Neuropixels', 'nhp 1.0',     'IMEC',                   'brain',          True],
         ['S-Probe',     '32 chan',     'Plexon',                 'brain',          True],
@@ -163,6 +166,25 @@ class ElectrodeArrayModel(dj.Lookup):
                         electrode_grid_shape = (1, 1),
                         electrode_grid_spacing = (0, 0),
                         electrode_geometry = {'electrode_base_z_length': 120e-3, 'electrode_tip_z_length': 5e-3}
+                    )
+                ]).reshape((1, 2, 1))
+
+            elif {'Hook-Wire', 'clipped'} == set(array_key.values()):
+                
+                # shank grid and geometries
+                shank_spacing = (0, 60e-6, 0)
+                shank_grid = np.array([
+                    dict(
+                        shank_dims = (0, 0, 0),
+                        electrode_grid_shape = (1, 1),
+                        electrode_grid_spacing = (0, 0),
+                        electrode_geometry = {'electrode_base_z_length': 123e-3, 'electrode_tip_z_length': 1e-3}
+                    ),
+                    dict(
+                        shank_dims = (0, 0, 0),
+                        electrode_grid_shape = (1, 1),
+                        electrode_grid_spacing = (0, 0),
+                        electrode_geometry = {'electrode_base_z_length': 120e-3, 'electrode_tip_z_length': 4e-3}
                     )
                 ]).reshape((1, 2, 1))
 
@@ -362,7 +384,7 @@ class Software(dj.Lookup):
         #software name  |software version |equipment category |software manufacturer |software manufacturer location |software manufacturer location  |software manual path
         ['Simulink',     '',               'task controller',  'MathWorks',           'Natick, MA',                   ''],
         ['Plexon OFS',   '4.5.0',          'spike sorter',     'Plexon',              'Dallas, TX',                   ''],
-        ['KiloSort',     '1.0',            'spike sorter',     'Cortexlab',           'UCL',                          ''],
+        ['Kilosort',     '2.0',            'spike sorter',     'Cortexlab',           'UCL',                          ''],
         ['Unity 3D',     '',               'graphics',         'Unity Technologies',  'San Francisco, CA',            ''],
         ['Psychtoolbox', '3.0',            'graphics',         'open source',         '',                             '']
     ]

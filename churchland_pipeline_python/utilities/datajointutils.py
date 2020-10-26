@@ -155,6 +155,21 @@ def insertpart(master: DataJointTable, part_name: str, **kwargs) -> None:
         print('Unrecognized part name: {}'.format(part_name))
 
 
+def matchfuzzykey(table_dict: dict) -> dict:
+    """Attemps to match a string or ordered sequence of strings with a primary key in the associated table."""
+
+    primary_key = {}
+    for fuzzy_key, table in table_dict.items():
+
+        key = {k:v for k,v in zip(table.primary_key, ([fuzzy_key] if isinstance(fuzzy_key,str) else fuzzy_key))}
+
+        assert len(table & key), 'Unrecognized input {}. Limit table {} to one entry'.format(fuzzy_key, table.table_name)
+
+        primary_key.update({fuzzy_key: (table & key).fetch1('KEY')})
+
+    return primary_key
+
+
 def nextkey(table: DataJointTable, index: int=0) -> dict:
     """Gets the next (unpopulated) key for a table."""
 
@@ -163,6 +178,18 @@ def nextkey(table: DataJointTable, index: int=0) -> dict:
         return keys[index]
     else:
         return None
+
+
+def nextuniqueint(table: DataJointTable, attr: str, key: dict={}) -> int:
+    """Gets the smallest unique integer attribute value. Can restrict inferrence of unique values with an optional key."""
+
+    if not(table & key):
+        min_val = 0
+    else:
+        all_val = table.fetch(attr)
+        min_val = next(i for i in range(2+max(all_val)) if i not in all_val)
+
+    return min_val
 
 
 def joinparts(

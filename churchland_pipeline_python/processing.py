@@ -1,12 +1,14 @@
 import datajoint as dj
 import os, re, inspect, math
 import neo
+import pandas as pd
 import numpy as np
+import scipy.io as sio
 from . import acquisition, equipment, reference
 from .utilities import datasync, datajointutils as dju
 from scipy import signal
 
-schema = dj.schema('churchland_analyses_processing')
+schema = dj.schema(dj.config.get('database.prefix') + 'churchland_analyses_processing')
 
 # =======
 # LEVEL 0
@@ -33,6 +35,15 @@ class EmgSort(dj.Manual):
     ---
     -> equipment.Software
     emg_sort_path: varchar(1012)   # path to sort files
+    """
+
+
+@schema
+class EmgChannelQuality(dj.Manual):
+    definition = """
+    -> acquisition.EmgChannelGroup.Channel
+    ---
+    emg_channel_quality: enum('sortable', 'unsortable', 'dead') # EMG channel quality
     """
 
 
@@ -179,24 +190,26 @@ class Filter(dj.Lookup):
 class SyncBlock(dj.Imported):
     definition = """
     # Speedgoat sync blocks, decoded from ephys files
-    -> acquisition.EphysRecording
+    -> acquisition.EphysRecording.File
     sync_block_start: int unsigned # sample index (ephys time base) corresponding to the beginning of the sync block
     ---
     sync_block_time: double        # encoded simulation time (Speedgoat time base)
     """
 
-    key_source = acquisition.EphysRecording \
-        & (acquisition.EphysRecording.Channel & {'channel_type':'sync'})
+    key_source = acquisition.EphysRecording.File \
+        & (acquisition.EphysRecording.Channel & {'ephys_channel_type':'sync'})
 
     def make(self, key):
 
         # sync channel ID
-        sync_rel = acquisition.EphysRecording.Channel & key & {'channel_type': 'sync'}
-        sync_id, sync_idx = sync_rel.fetch1('channel_id', 'channel_idx')
+        sync_rel = acquisition.EphysRecording.Channel & key & {'ephys_channel_type': 'sync'}
+        sync_id, sync_idx = sync_rel.fetch1('ephys_channel_id', 'ephys_channel_idx')
 
         # fetch local ephys recording file path and sample rate
-        ephys_file_path, fs_ephys = (acquisition.EphysRecording & key).fetch1('ephys_file_path', 'ephys_sample_rate')
-        ephys_file_path = (reference.EngramTier & {'engram_tier': 'locker'}).ensurelocal(ephys_file_path)
+        fs_ephys, file_path, file_pref, file_ext = (acquisition.EphysRecording * (acquisition.EphysRecording.File & key))\
+            .fetch1('ephys_recording_sample_rate', 'ephys_recording_path', 'ephys_file_prefix', 'ephys_file_extension')
+
+        ephys_file_path = (reference.EngramTier & {'engram_tier': 'locker'}).ensurelocal(file_path + file_pref + '.' + file_ext)
 
         # read NSx file
         reader = neo.rawio.BlackrockRawIO(ephys_file_path)
@@ -236,11 +249,9 @@ class SyncBlock(dj.Imported):
 class MotorUnit(dj.Imported):
     definition = """
     # Sorted motor unit
-    -> acquisition.EmgChannelGroup
     -> EmgSort
     motor_unit_id:         smallint unsigned # motor unit ID number
     ---
-    -> equipment.Software
     motor_unit_spikes_raw: longblob          # unprocessed spike indices
     """
         
@@ -253,12 +264,53 @@ class MotorUnit(dj.Imported):
         motor_unit_template: longblob # motor unit action potential waveform template
         """
 
+    def make(self, key):
+
+        # get path to sort files
+        emg_sort = EmgSort & key
+        emg_sort_path = emg_sort.fetch1('emg_sort_path')
+
+        # load sort data
+        if emg_sort & {'software': 'Myosort'}:
+
+            # import last saved spike field
+            spikes = sio.loadmat(emg_sort_path + 'spikes.mat')['Spk'][0][0][-1]
+
+            # import labels and templates
+            labels = sio.loadmat(emg_sort_path + 'labels.mat')['Lab'][0][0]
+            templates = sio.loadmat(emg_sort_path + 'templates.mat')['W'][0][0]
+
+            # infer import field based on last entry with non-zero templates
+            import_idx = next(i for i in reversed(range(len(templates))) if templates[i].shape[0] > 0)
+            import_field = templates.dtype.names[import_idx]
+
+            labels = labels[next(i for i,name in enumerate(labels.dtype.names) if name==import_field)]
+            templates = templates[import_idx]
+
+            # label groups
+            label_group = np.unique(labels)
+            label_group = label_group[np.nonzero(label_group)]
+
+        else:
+            print('Spike sorter {} unrecognized. Unspecified import method.'.format(emg_sort.fetch1('software')))
+            return None
+
+        # //TODO add templates
+
+        # construct motor unit keys
+        motor_unit_key = [
+            dict(**key, motor_unit_id=idx, motor_unit_spikes_raw=spikes[labels == group])
+            for idx, group in enumerate(label_group)
+        ]
+
+        # insert motor units
+        self.insert(motor_unit_key)
+        
 
 @schema
 class Neuron(dj.Imported):
     definition = """
     # Sorted brain neuron
-    -> acquisition.BrainChannelGroup
     -> BrainSort
     neuron_id:         smallint unsigned       # neuron ID number
     ---
@@ -274,3 +326,38 @@ class Neuron(dj.Imported):
         ---
         neuron_template: longblob # neuron action potential waveform template
         """
+
+    def make(self, key):
+
+        # get path to sort files
+        brain_sort = BrainSort & key
+        brain_sort_path = brain_sort.fetch1('brain_sort_path')
+
+        # load sort data
+        if brain_sort & {'software': 'Kilosort'}:
+            
+            t_spike = np.load(brain_sort_path + 'spike_times.npy')
+            cluster_id = np.load(brain_sort_path + 'spike_clusters.npy')
+            cluster_group = pd.read_csv(brain_sort_path + 'cluster_group.tsv', delimiter='\t')
+
+            # rename cluster groups
+            cluster_group['group'].replace({'good': 'single', 'mua': 'multi'}, inplace=True)
+
+            # restrict neurons to single- or multi-units
+            cluster_group = cluster_group[cluster_group['group'].isin(['single', 'multi'])]
+
+        else:
+            print('Spike sorter {} unrecognized. Unspecified import method.'.format(brain_sort.fetch1('software')))
+            return None
+
+        # construct neuron keys
+        neuron_key = [
+            dict(**key, neuron_id=idx, neuron_isolation=group, neuron_spikes_raw=t_spike[cluster_id == clus])
+            for idx, (clus, group) in enumerate(zip(cluster_group['cluster_id'], cluster_group['group']))
+        ]
+
+        # //TODO add templates (these will need to be reconstructed post-hoc, as the template IDs and cluster IDs
+        # are not guaranteed to match after manual curation in Phy https://phy.readthedocs.io/en/latest/terminology/)
+
+        # insert neurons
+        self.insert(neuron_key)

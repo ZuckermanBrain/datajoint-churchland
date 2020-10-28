@@ -206,10 +206,11 @@ class SyncBlock(dj.Imported):
         sync_id, sync_idx = sync_rel.fetch1('ephys_channel_id', 'ephys_channel_idx')
 
         # fetch local ephys recording file path and sample rate
-        fs_ephys, file_path, file_pref, file_ext = (acquisition.EphysRecording * (acquisition.EphysRecording.File & key))\
+        fs_ephys, file_path, file_prefix, file_extension = (acquisition.EphysRecording * (acquisition.EphysRecording.File & key))\
             .fetch1('ephys_recording_sample_rate', 'ephys_recording_path', 'ephys_file_prefix', 'ephys_file_extension')
 
-        ephys_file_path = (reference.EngramTier & {'engram_tier': 'locker'}).ensurelocal(file_path + file_pref + '.' + file_ext)
+        ephys_file_path = (reference.EngramTier & {'engram_tier': 'locker'})\
+            .ensurelocal(file_path + file_prefix + '.' + file_extension)
 
         # read NSx file
         reader = neo.rawio.BlackrockRawIO(ephys_file_path)
@@ -250,9 +251,9 @@ class MotorUnit(dj.Imported):
     definition = """
     # Sorted motor unit
     -> EmgSort
-    motor_unit_id:         smallint unsigned # motor unit ID number
+    motor_unit_id:            smallint unsigned # motor unit ID number
     ---
-    motor_unit_spikes_raw: longblob          # unprocessed spike indices
+    motor_unit_spike_indices: longblob          # raw spike indices for the full recording
     """
         
     class Template(dj.Part):
@@ -299,23 +300,23 @@ class MotorUnit(dj.Imported):
 
         # construct motor unit keys
         motor_unit_key = [
-            dict(**key, motor_unit_id=idx, motor_unit_spikes_raw=spikes[labels == group])
+            dict(**key, motor_unit_id=idx, motor_unit_spike_indices=spikes[labels == group])
             for idx, group in enumerate(label_group)
         ]
 
         # insert motor units
         self.insert(motor_unit_key)
-        
+
 
 @schema
 class Neuron(dj.Imported):
     definition = """
     # Sorted brain neuron
     -> BrainSort
-    neuron_id:         smallint unsigned       # neuron ID number
+    neuron_id:            smallint unsigned       # neuron ID number
     ---
-    neuron_isolation:  enum('single', 'multi') # neuron isolation quality (single- or multi-unit)
-    neuron_spikes_raw: longblob                # unprocessed spike indices
+    neuron_isolation:     enum('single', 'multi') # neuron isolation quality (single- or multi-unit)
+    neuron_spike_indices: longblob                # raw spike indices for the full recording
     """
         
     class Template(dj.Part):
@@ -352,7 +353,7 @@ class Neuron(dj.Imported):
 
         # construct neuron keys
         neuron_key = [
-            dict(**key, neuron_id=idx, neuron_isolation=group, neuron_spikes_raw=t_spike[cluster_id == clus])
+            dict(**key, neuron_id=idx, neuron_isolation=group, neuron_spike_indices=t_spike[cluster_id == clus])
             for idx, (clus, group) in enumerate(zip(cluster_group['cluster_id'], cluster_group['group']))
         ]
 

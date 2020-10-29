@@ -1,7 +1,7 @@
 function obj = getSchema
 persistent schemaObject
 if isempty(schemaObject)
-    schemaObject = dj.Schema(dj.conn, 'lab', 'churchland_common_lab');
+    schemaObject = dj.Schema(dj.conn, 'reference', 'churchland_common_reference');
 end
 obj = schemaObject;
 end

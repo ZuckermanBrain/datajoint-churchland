@@ -19,7 +19,7 @@ If you simply want to access data stored in the database, but do not plan on mak
     $ conda activate datajoint
     ```
     
-2. **Install the pipline.**
+2. **Install the pipeline.**
 
     The [main repository](https://github.com/ZuckermanBrain/datajoint-churchland) (and its dependencies?) can be installed locally directly from git:
 

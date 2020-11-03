@@ -51,7 +51,7 @@ class EmgChannelQuality(dj.Manual):
 class Filter(dj.Lookup):
     definition = """
     # Filter bank
-    filter_id: int unsigned # filter ID number
+    filter_id: int unsigned # filter ID number (for proper functionality, ensure uniqueness across all part tables)
     """
     
     class Beta(dj.Part):

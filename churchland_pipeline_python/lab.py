@@ -47,6 +47,8 @@ class User(dj.Lookup):
     """
     
     contents = [
-        ['njm2149', 'Najja Marshall'],
-        ['emt2177', 'Eric Trautmann']
+        ['arw2212', 'Adam Wilke'],
+        ['emt2177', 'Eric Trautmann'],
+        ['njm2149', 'Najja Marshall']
+        
     ]

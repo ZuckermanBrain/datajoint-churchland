@@ -102,6 +102,13 @@ class BehaviorRecording(dj.Manual):
         behavior_file_extension: varchar(255)     # behavior recording file extension
         """
 
+        def projfilepath(self):
+            """Project full file path into table."""
+
+            return (self * BehaviorRecording).proj(
+                behavior_file_path='CONCAT(behavior_recording_path, behavior_file_prefix, ".", behavior_file_extension)'
+            )
+
 
 @schema
 class EphysRecording(dj.Manual):
@@ -123,6 +130,14 @@ class EphysRecording(dj.Manual):
         ephys_file_prefix:    varchar(255)     # ephys recording file prefix
         ephys_file_extension: varchar(255)     # ephys recording file extension
         """
+
+        def projfilepath(self):
+            """Project full file path into table."""
+
+            return (self * EphysRecording).proj(
+                ephys_file_path='CONCAT(ephys_recording_path, ephys_file_prefix, ".", ephys_file_extension)'
+            )
+
 
     class Channel(dj.Part):
         definition = """

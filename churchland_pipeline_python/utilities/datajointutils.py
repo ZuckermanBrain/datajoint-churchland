@@ -20,16 +20,10 @@ DataJointTable = dj.user_tables.OrderedClass
 def getcontext(table: DataJointTable) -> FrameType:
     """Gets table context."""
 
-    # inspect table members
-    attributes = inspect.getmembers(table, lambda a:not(inspect.isroutine(a)))
-
-    # full table name
-    table_name = next(a for a in attributes if a[0].startswith('full_table_name'))[-1]
-
     # check stack for table context
     for frame in inspect.stack():
         try:
-            eval(dj.table.lookup_class_name(table_name, frame[0].f_globals), frame[0].f_globals)
+            eval(dj.table.lookup_class_name(table.full_table_name, frame[0].f_globals), frame[0].f_globals)
         except TypeError:
             pass
         else:
@@ -221,8 +215,12 @@ def joinparts(
             parts[layer] = [master]
 
         else:
-            parts[layer] = [child for parent in parts[layer - 1] for child in getchildren(parent, context=context) if set(getparents(child, context=context))=={parent}]
-            parts[layer] = [child for child in parts[layer] if (master * child) & key]
+            # get part tables in next layer for each table in previous layer
+            parts[layer] = [part for parent in parts[layer - 1] for part in getparts(parent, context=context)]
+
+            # restrict part tables to those with attributes in the key
+            parts[layer] = [part for part in parts[layer]
+                if ((master * part) & key) and ((master * part) & key).attributes_in_restriction()]
 
     part_tables = list(chain.from_iterable(parts.values()))
     joined_table = reduce(lambda a,b: a*b, part_tables) & key
@@ -233,10 +231,8 @@ def joinparts(
 def readattributes(table: DataJointTable) -> dict:
     """Reads the attribute names and default values for a table."""
 
-    # read table definition
-    members = inspect.getmembers(table, lambda a:not(inspect.isroutine(a)))
-    table_def = next(a for a in members if a[0].startswith('definition'))[-1]
-    table_def = [s.lstrip() for s in table_def.split('\n')]
+    # parse table definition
+    table_def = [s.lstrip() for s in table.definition.split('\n')]
 
     # replace null entries with nan
     table_def = [s.replace('null','nan') for s in table_def]

@@ -157,15 +157,20 @@ def readtrialdata(file_path, success_state, sample_rate):
 
     # trial result
     lastState = SgTrial['task_state'][-1]
+    
     if lastState < success_state:
         print('Trial {} was incomplete and excluded'.format(trial_num))
+        return None
+
     else:
         if lastState == success_state:
             SgTrial['successful_trial'] = 1
         else:
             SgTrial['successful_trial'] = 0
 
-    # remove undecoded keys
-    SgTrial = {k: v for k,v in zip(SgTrial.keys(), SgTrial.values()) if not isinstance(v,str)}
-                
-    return SgTrial
+        # remove undecoded keys
+        SgTrial = {k: v for k,v in zip(SgTrial.keys(), SgTrial.values()) if not isinstance(v,str)}
+                    
+        return SgTrial
+
+    

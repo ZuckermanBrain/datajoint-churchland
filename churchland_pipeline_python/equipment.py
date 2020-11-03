@@ -336,7 +336,7 @@ class Hardware(dj.Lookup):
     hardware_model:                 varchar(255) # hardware model name
     hardware_manufacturer:          varchar(255) # hardware manufacturer
     hardware_manufacturer_location: varchar(255) # hardware manufacturer location
-    hardware_manual = '':           varchar(255) # hardware manual file path
+    hardware_manual_path = '':      varchar(255) # hardware manual file path
     """
 
     class Parameter(dj.Part):
@@ -369,7 +369,7 @@ class Software(dj.Lookup):
     -> EquipmentCategory
     software_manufacturer:          varchar(255) # software manufacturer
     software_manufacturer_location: varchar(255) # software manufacturer
-    software_manual = '':           varchar(255) # software manual file path
+    software_manual_path = '':      varchar(255) # software manual file path
     """
 
     class Parameter(dj.Part):

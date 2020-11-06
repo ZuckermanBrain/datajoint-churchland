@@ -50,5 +50,4 @@ class User(dj.Lookup):
         ['arw2212', 'Adam Wilke'],
         ['emt2177', 'Eric Trautmann'],
         ['njm2149', 'Najja Marshall']
-        
     ]

@@ -4,6 +4,7 @@ import neo
 import pandas as pd
 import numpy as np
 import scipy.io as sio
+import matplotlib.pyplot as plt
 from . import acquisition, equipment, reference
 from .utilities import datasync, datajointutils as dju
 from scipy import signal
@@ -264,6 +265,38 @@ class MotorUnit(dj.Imported):
         ---
         motor_unit_template: longblob # motor unit action potential waveform template
         """
+
+        def plot(self, row_attr: str='ephys_channel_idx', column_attr: str='motor_unit_id'):
+
+            for session_key in (dj.U('session_date') & self).fetch('KEY'):
+
+                row_keys = (dj.U(row_attr) & (self & session_key)).fetch('KEY')
+                column_keys = (dj.U(column_attr) & (self & session_key)).fetch('KEY')
+
+                n_rows = len(row_keys)
+                n_columns = len(column_keys)
+
+                fig, axs = plt.subplots(n_rows, n_columns, figsize=(12,8), sharey='row')
+
+                for idx, (row_key, col_key) \
+                    in zip(np.ndindex((n_rows, n_columns)), itertools.product(row_keys, column_keys)):
+
+                    template = (self & session_key & row_key & col_key).fetch1('motor_unit_template')
+
+                    axs[idx].plot(template, 'k');
+
+                    [axs[idx].spines[edge].set_visible(False) for edge in ['top','right']];
+
+                    if idx[0] < n_rows-1:
+                        axs[idx].spines['bottom'].set_visible(False)
+                        axs[idx].set_xticks([])
+
+                    if idx[1] > 0: 
+                        axs[idx].spines['left'].set_visible(False)
+                        axs[idx].set_yticks([])
+
+                fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+                fig.suptitle('Session {}'.format(session_key['session_date']));
 
     def make(self, key):
 

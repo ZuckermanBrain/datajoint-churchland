@@ -8,7 +8,7 @@ from . import acquisition, equipment, reference
 from .utilities import datasync, datajointutils as dju
 from scipy import signal
 
-schema = dj.schema(dj.config.get('database.prefix') + 'churchland_analyses_processing')
+schema = dj.schema(dj.config.get('database.prefix') + 'churchland_common_processing')
 
 # =======
 # LEVEL 0
@@ -19,10 +19,10 @@ class BrainSort(dj.Manual):
     definition = """
     # Spike sorted brain data
     -> acquisition.BrainChannelGroup
-    brain_sort_id: tinyint unsigned  # brain sort ID number
+    brain_sort_id: tinyint unsigned # brain sort ID number
     ---
     -> equipment.Software
-    brain_sort_path: varchar(1012)   # path to sort files
+    brain_sort_path: varchar(1012)  # path to sort files
     """
 
 
@@ -31,19 +31,19 @@ class EmgSort(dj.Manual):
     definition = """
     # Spike sorted EMG data
     -> acquisition.EmgChannelGroup
-    emg_sort_id: tinyint unsigned  # emg sort ID number
+    emg_sort_id: tinyint unsigned # emg sort ID number
     ---
     -> equipment.Software
-    emg_sort_path: varchar(1012)   # path to sort files
+    emg_sort_path: varchar(1012)  # path to sort files
     """
 
 
 @schema
-class EmgChannelQuality(dj.Manual):
+class EphysChannelQuality(dj.Manual):
     definition = """
-    -> acquisition.EmgChannelGroup.Channel
+    -> acquisition.EphysRecording.Channel
     ---
-    emg_channel_quality: enum('sortable', 'unsortable', 'dead') # EMG channel quality
+    ephys_channel_quality: enum('sortable', 'unsortable', 'dead') # EMG channel quality
     """
 
 
@@ -206,11 +206,11 @@ class SyncBlock(dj.Imported):
         sync_id, sync_idx = sync_rel.fetch1('ephys_channel_id', 'ephys_channel_idx')
 
         # fetch local ephys recording file path and sample rate
-        fs_ephys, file_path, file_prefix, file_extension = (acquisition.EphysRecording * (acquisition.EphysRecording.File & key))\
-            .fetch1('ephys_recording_sample_rate', 'ephys_recording_path', 'ephys_file_prefix', 'ephys_file_extension')
+        fs_ephys = (acquisition.EphysRecording & key).fetch1('ephys_recording_sample_rate')
+        ephys_file_path = (acquisition.EphysRecording.File & key).projfilepath().fetch1('ephys_file_path')
 
-        ephys_file_path = (reference.EngramTier & {'engram_tier': 'locker'})\
-            .ensurelocal(file_path + file_prefix + '.' + file_extension)
+        # ensure local path
+        ephys_file_path = (reference.EngramTier & {'engram_tier': 'locker'}).ensurelocal(ephys_file_path)
 
         # read NSx file
         reader = neo.rawio.BlackrockRawIO(ephys_file_path)
@@ -274,38 +274,84 @@ class MotorUnit(dj.Imported):
         # load sort data
         if emg_sort & {'software': 'Myosort'}:
 
-            # import last saved spike field
-            spikes = sio.loadmat(emg_sort_path + 'spikes.mat')['Spk'][0][0][-1]
+            if 'matlab_export' in emg_sort_path:
 
-            # import labels and templates
-            labels = sio.loadmat(emg_sort_path + 'labels.mat')['Lab'][0][0]
-            templates = sio.loadmat(emg_sort_path + 'templates.mat')['W'][0][0]
+                # read and format spike indices
+                spike_indices = sio.loadmat(emg_sort_path + 'motor_unit_spike_indices')['spikeIndices']
 
-            # infer import field based on last entry with non-zero templates
-            import_idx = next(i for i in reversed(range(len(templates))) if templates[i].shape[0] > 0)
-            import_field = templates.dtype.names[import_idx]
+                for idx in np.ndindex(spike_indices.shape):
+                    spike_indices[idx] = spike_indices[idx][0]
 
-            labels = labels[next(i for i,name in enumerate(labels.dtype.names) if name==import_field)]
-            templates = templates[import_idx]
+                # convert spike indices to keys
+                motor_unit_keys = pd.DataFrame(data=spike_indices[1:,:], columns=spike_indices[0,:]) \
+                    .astype({'motor_unit_id': 'int32'}) \
+                    .to_dict(orient='records')
 
-            # label groups
-            label_group = np.unique(labels)
-            label_group = label_group[np.nonzero(label_group)]
+                # map imported IDs to new IDs
+                new_ids = {motor_unit_key['motor_unit_id']: idx for idx, motor_unit_key in enumerate(motor_unit_keys)}
+
+                # update motor unit IDs
+                [motor_unit_key.update(**key, motor_unit_id=new_ids[motor_unit_key['motor_unit_id']]) \
+                    for motor_unit_key in motor_unit_keys];
+
+                # read and format waveform templates
+                templates = sio.loadmat(emg_sort_path + 'motor_unit_templates')['templates']
+
+                for idx in np.ndindex(templates.shape):
+                    templates[idx] = templates[idx][0]
+
+                # convert templates to keys
+                template_keys = pd.DataFrame(data=templates[1:,:], columns=templates[0,:]) \
+                    .astype({'motor_unit_id': 'int32', 'emg_channel_idx': 'int32'}) \
+                    .to_dict(orient='records')
+
+                # update motor unit IDs and channel index (1 -> 0 indexing)
+                [template_key.update(
+                    **key, 
+                    ephys_channel_idx=(acquisition.EmgChannelGroup.Channel & {'emg_channel_idx': template_key['emg_channel_idx']-1}).fetch1('ephys_channel_idx'), 
+                    motor_unit_id=new_ids[template_key['motor_unit_id']]
+                    )
+                for template_key in template_keys];
+
+                # delete emg channel index
+                [template_key.pop('emg_channel_idx') for template_key in template_keys];
+
+            else:
+                # import last saved spike field
+                spikes = sio.loadmat(emg_sort_path + 'spikes.mat')['Spk'][0][0][-1]
+
+                # import labels and templates
+                labels = sio.loadmat(emg_sort_path + 'labels.mat')['Lab'][0][0]
+                templates = sio.loadmat(emg_sort_path + 'templates.mat')['W'][0][0]
+
+                # infer import field based on last entry with non-zero templates
+                import_idx = next(i for i in reversed(range(len(templates))) if templates[i].shape[0] > 0)
+                import_field = templates.dtype.names[import_idx]
+
+                labels = labels[next(i for i,name in enumerate(labels.dtype.names) if name==import_field)]
+                templates = templates[import_idx]
+
+                # label groups
+                label_group = np.unique(labels)
+                label_group = label_group[np.nonzero(label_group)]
+
+                motor_unit_keys = [
+                    dict(**key, motor_unit_id=idx, motor_unit_spike_indices=spikes[labels == group])
+                    for idx, group in enumerate(label_group)
+                ]
+
+                template_keys = None
 
         else:
             print('Spike sorter {} unrecognized. Unspecified import method.'.format(emg_sort.fetch1('software')))
             return None
 
-        # //TODO add templates
-
-        # construct motor unit keys
-        motor_unit_key = [
-            dict(**key, motor_unit_id=idx, motor_unit_spike_indices=spikes[labels == group])
-            for idx, group in enumerate(label_group)
-        ]
-
         # insert motor units
-        self.insert(motor_unit_key)
+        self.insert(motor_unit_keys)
+
+        # insert motor unit template keys
+        if template_keys:
+            self.Template.insert(template_keys)
 
 
 @schema

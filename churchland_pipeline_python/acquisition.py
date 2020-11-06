@@ -13,14 +13,13 @@ schema = dj.schema(dj.config.get('database.prefix') + 'churchland_common_acquisi
 class Task(dj.Lookup):
     definition = """
     # Experimental tasks
-    task:                      varchar(32)       # task name
-    task_version:              varchar(8)        # task version
+    task:                  varchar(32)  # task name
+    task_version:          varchar(8)   # task version
     ---
-    task_description = '':     varchar(255)      # additional task details
+    task_description = '': varchar(255) # additional task details
     """
     
     contents = [
-        #task name              |version   |task description
         ['pacman',               '1.0',     '1-dimensional force tracking']
     ]
 
@@ -48,13 +47,6 @@ class Session(dj.Manual):
         -> equipment.Hardware
         """
 
-    class User(dj.Part):
-        definition = """
-        # Session personnel
-        -> master
-        -> lab.User
-        """
-
     class Notes(dj.Part):
         definition = """
         # Session notes
@@ -69,6 +61,13 @@ class Session(dj.Manual):
             
             for key in self:
                 print((self & key).fetch1('session_notes'))
+
+    class User(dj.Part):
+        definition = """
+        # Session personnel
+        -> master
+        -> lab.User
+        """
 
     class Software(dj.Part):
         definition = """
@@ -89,24 +88,25 @@ class BehaviorRecording(dj.Manual):
     -> Session
     ---
     behavior_recording_sample_rate = 1e3: smallint unsigned # behavior sample rate (Hz)
-    behavior_recording_path:              varchar(1012)     # path to behavior files
+    behavior_recording_path:              varchar(1012)     # path to behavior file directory
     """
 
     class File(dj.Part):
         definition = """
         # Behavior recording file
         -> master
-        behavior_file_id:       smallint unsigned # behavior recording file ID number
+        behavior_file_id:        smallint unsigned # behavior recording file ID number
         ---
-        behavior_file_prefix:    varchar(255)     # behavior recording file prefix
-        behavior_file_extension: varchar(255)     # behavior recording file extension
+        behavior_file_path:      varchar(255)      # behavior recording file path (relative to behavior recording directory)
+        behavior_file_name:      varchar(255)      # behavior recording file name
+        behavior_file_extension: varchar(255)      # behavior recording file extension
         """
 
         def projfilepath(self):
             """Project full file path into table."""
 
             return (self * BehaviorRecording).proj(
-                behavior_file_path='CONCAT(behavior_recording_path, behavior_file_prefix, ".", behavior_file_extension)'
+                behavior_file_path='CONCAT(behavior_recording_path, behavior_file_path, behavior_file_name, ".", behavior_file_extension)'
             )
 
 
@@ -118,24 +118,25 @@ class EphysRecording(dj.Manual):
     ---
     ephys_recording_sample_rate: smallint unsigned # ephys sample rate (Hz)
     ephys_recording_duration:    double            # ephys recording duration (s)
-    ephys_recording_path:        varchar(1012)     # ephys file path
+    ephys_recording_path:        varchar(1012)     # path to ephys file directory
     """
 
     class File(dj.Part):
         definition = """
         # Ephys recording file
         -> master
-        ephys_file_id:       smallint unsigned # ephys recording file ID number
+        ephys_file_id:        smallint unsigned # ephys recording file ID number
         ---
-        ephys_file_prefix:    varchar(255)     # ephys recording file prefix
-        ephys_file_extension: varchar(255)     # ephys recording file extension
+        ephys_file_path:      varchar(255)      # ephys recording file path (relative to ephys recording directory)
+        ephys_file_name:      varchar(255)      # ephys recording file name
+        ephys_file_extension: varchar(255)      # ephys recording file extension
         """
 
         def projfilepath(self):
             """Project full file path into table."""
 
             return (self * EphysRecording).proj(
-                ephys_file_path='CONCAT(ephys_recording_path, ephys_file_prefix, ".", ephys_file_extension)'
+                ephys_file_path='CONCAT(ephys_recording_path, ephys_file_path, ephys_file_name, ".", ephys_file_extension)'
             )
 
 
@@ -209,5 +210,5 @@ class EmgChannelGroup(dj.Manual):
         -> master
         -> EphysRecording.Channel
         ---
-        emg_channel_idx:     smallint unsigned                      # EMG channel index
+        emg_channel_idx: smallint unsigned # EMG channel index
         """

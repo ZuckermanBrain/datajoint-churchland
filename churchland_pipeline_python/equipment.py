@@ -8,6 +8,7 @@ Coordinate system: x (left/right, onscreen); y (up/down, onscreen); z (into scre
 import datajoint as dj
 import re
 import numpy as np
+from . import lab
 from decimal import Decimal
 
 schema = dj.schema(dj.config.get('database.prefix') + 'churchland_common_equipment')
@@ -225,13 +226,21 @@ class ElectrodeArrayModel(dj.Lookup):
 
             elif {'Neuropixels', 'nhp demo'} == set(array_key.values()):
 
+                # distance from first electrode to tip //TODO check this
+                distance_tip_to_first_elec = 0
+
+                # electrode x-y coordinates
+                x_coords = np.repeat(np.array([[-6, 26, -26, 6]]), 32, axis=0).reshape(128,1)
+                y_coords = -int(45e3) + distance_tip_to_first_elec \
+                    + (np.array([[6, 6, 37, 37]]) + np.reshape(62 * np.arange(32), (32,1))).reshape(128,1)
+
                 # shank grid and geometries
                 shank_spacing = (0, 0, 0)
                 shank_grid = np.array([
                     dict(
                         shank_dims = (120e-6, 45e-3, 120e-6),
-                        electrode_grid_shape = (2, 64),
-                        electrode_grid_spacing = (25e-6, 25e-6),
+                        electrode_grid_coords = np.hstack((x_coords, y_coords)),
+                        electrode_grid_scale = 1e6,
                         electrode_geometry = {'electrode_base_x_length': 12e-6}
                     )
                 ]).reshape((1, 1, 1))
@@ -307,22 +316,39 @@ class ElectrodeArrayModel(dj.Lookup):
                     shank_z_length = Decimal(shank['shank_dims'][2])
                 ))
 
-                elec_keys = []
+                
                 elec_geom_key = (ElectrodeGeometry & shank['electrode_geometry']).fetch1('KEY')
 
-                # offset to center electrode grid horizontally on the shank
-                elec_grid_x_center = Decimal((shank['electrode_grid_spacing'][0] * (shank['electrode_grid_shape'][0] - 1))/2)
+                if 'electrode_grid_coords' in shank.keys():
 
-                for elec_idx, elec_coords in enumerate(np.ndindex(shank['electrode_grid_shape'])):
+                    elec_keys = [
+                        dict(
+                            **array_key,
+                            shank_idx = shank_idx,
+                            electrode_idx = idx,
+                            electrode_x = Decimal(coords[0] / shank['electrode_grid_scale']),
+                            electrode_y = Decimal(coords[1] / shank['electrode_grid_scale']),
+                            **elec_geom_key
+                        )
+                        for idx, coords in enumerate(shank['electrode_grid_coords'])
+                    ]
 
-                    elec_keys.append(dict(
-                        **array_key,
-                        shank_idx = shank_idx,
-                        electrode_idx = elec_idx,
-                        electrode_x = Decimal(shank['electrode_grid_spacing'][0]) * elec_coords[0] - elec_grid_x_center,
-                        electrode_y = Decimal(shank['electrode_grid_spacing'][1]) * elec_coords[1],
-                        **elec_geom_key
-                    ))
+                else:
+                    elec_keys = []    
+
+                    # offset to center electrode grid horizontally on the shank
+                    elec_grid_x_center = Decimal((shank['electrode_grid_spacing'][0] * (shank['electrode_grid_shape'][0] - 1))/2)
+
+                    for elec_idx, elec_coords in enumerate(np.ndindex(shank['electrode_grid_shape'])):
+
+                        elec_keys.append(dict(
+                            **array_key,
+                            shank_idx = shank_idx,
+                            electrode_idx = elec_idx,
+                            electrode_x = Decimal(shank['electrode_grid_spacing'][0]) * elec_coords[0] - elec_grid_x_center,
+                            electrode_y = Decimal(shank['electrode_grid_spacing'][1]) * elec_coords[1],
+                            **elec_geom_key
+                        ))
 
                 self.Electrode.insert(elec_keys)
         
@@ -413,14 +439,18 @@ class ElectrodeArrayConfig(dj.Lookup):
     definition = """
     # Mapping of electrode array electrodes to channels on a data array
     -> ElectrodeArray
-    electrode_array_config_id: int unsigned # electrode array configuration ID number
+    electrode_array_config_id: int unsigned     # electrode array configuration ID number
+    ---
+    -> lab.User                                 # user who made the configuration
+    electrode_array_config_date: date           # date config file created
+    electrode_array_config_notes: varchar(4095) # notes about the config file
     """
 
     class Channel(dj.Part):
         definition = """
         # Channel on recording file
         -> master
-        channel_idx: int unsigned # channel index on data array
+        ephys_channel_idx: int unsigned # channel index on ephys recording array
         """
 
     class Electrode(dj.Part):

@@ -1,5 +1,5 @@
 import datajoint as dj
-import os, re, inspect, math
+import os, re, inspect, math, itertools
 import neo
 import pandas as pd
 import numpy as np
@@ -276,45 +276,14 @@ class MotorUnit(dj.Imported):
 
             if 'matlab_export' in emg_sort_path:
 
-                # read and format spike indices
-                spike_indices = sio.loadmat(emg_sort_path + 'motor_unit_spike_indices')['spikeIndices']
+                # read data (and convert channels to 0-indexing)
+                spikes = sio.loadmat(emg_sort_path + 'spikes.mat')['spikes'].flatten()
+                labels = sio.loadmat(emg_sort_path + 'labels.mat')['labels'].flatten()
+                channels = sio.loadmat(emg_sort_path + 'channels.mat')['channels'].flatten() - 1
+                templates = sio.loadmat(emg_sort_path + 'templates.mat')['templates']
 
-                for idx in np.ndindex(spike_indices.shape):
-                    spike_indices[idx] = spike_indices[idx][0]
-
-                # convert spike indices to keys
-                motor_unit_keys = pd.DataFrame(data=spike_indices[1:,:], columns=spike_indices[0,:]) \
-                    .astype({'motor_unit_id': 'int32'}) \
-                    .to_dict(orient='records')
-
-                # map imported IDs to new IDs
-                new_ids = {motor_unit_key['motor_unit_id']: idx for idx, motor_unit_key in enumerate(motor_unit_keys)}
-
-                # update motor unit IDs
-                [motor_unit_key.update(**key, motor_unit_id=new_ids[motor_unit_key['motor_unit_id']]) \
-                    for motor_unit_key in motor_unit_keys];
-
-                # read and format waveform templates
-                templates = sio.loadmat(emg_sort_path + 'motor_unit_templates')['templates']
-
-                for idx in np.ndindex(templates.shape):
-                    templates[idx] = templates[idx][0]
-
-                # convert templates to keys
-                template_keys = pd.DataFrame(data=templates[1:,:], columns=templates[0,:]) \
-                    .astype({'motor_unit_id': 'int32', 'emg_channel_idx': 'int32'}) \
-                    .to_dict(orient='records')
-
-                # update motor unit IDs and channel index (1 -> 0 indexing)
-                [template_key.update(
-                    **key, 
-                    ephys_channel_idx=(acquisition.EmgChannelGroup.Channel & {'emg_channel_idx': template_key['emg_channel_idx']-1}).fetch1('ephys_channel_idx'), 
-                    motor_unit_id=new_ids[template_key['motor_unit_id']]
-                    )
-                for template_key in template_keys];
-
-                # delete emg channel index
-                [template_key.pop('emg_channel_idx') for template_key in template_keys];
+                # label group
+                label_group = np.unique(labels)
 
             else:
                 # import last saved spike field
@@ -335,22 +304,35 @@ class MotorUnit(dj.Imported):
                 label_group = np.unique(labels)
                 label_group = label_group[np.nonzero(label_group)]
 
-                motor_unit_keys = [
-                    dict(**key, motor_unit_id=idx, motor_unit_spike_indices=spikes[labels == group])
-                    for idx, group in enumerate(label_group)
-                ]
-
-                template_keys = None
+                templates = None
 
         else:
             print('Spike sorter {} unrecognized. Unspecified import method.'.format(emg_sort.fetch1('software')))
             return None
 
+        # construct motor unit keys
+        motor_unit_keys = [
+            dict(**key, motor_unit_id=idx, motor_unit_spike_indices=spikes[labels == group])
+            for idx, group in enumerate(label_group)
+        ]
+
         # insert motor units
         self.insert(motor_unit_keys)
 
-        # insert motor unit template keys
-        if template_keys:
+        # construct template keys
+        if np.any(templates):
+
+            template_keys = []
+            for chan_idx, unit_idx in itertools.product(range(templates.shape[0]), range(templates.shape[2])):
+
+                template_keys.append({
+                    **key, 
+                    'motor_unit_id': unit_idx, 
+                    **(acquisition.EmgChannelGroup.Channel & key & {'emg_channel_idx': channels[chan_idx]}).fetch1('KEY'),
+                    'motor_unit_template': templates[chan_idx, :, unit_idx]
+                })
+
+            # insert motor unit templates
             self.Template.insert(template_keys)
 
 

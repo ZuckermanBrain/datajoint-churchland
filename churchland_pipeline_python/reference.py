@@ -63,21 +63,29 @@ class EngramTier(dj.Lookup):
 
         return os.path.sep.join(path_parts)
 
-    
+    @classmethod
     def ensureremote(self, path: str) -> str:
         """Ensures that a path to a storage tier is provided relative to the remote (U19) server."""
 
-        assert len(self)==1, 'Specify one tier'
+        # infer storage tier from file path
+        engram_tier = {'engram_tier': tier for tier in self.fetch('engram_tier') if tier in path}
 
-        return path.replace(self.getlocalpath(), self.getremotepath())
+        # convert local path parts to remote
+        path = path.replace((self & engram_tier).getlocalpath(), (self & engram_tier).getremotepath())
 
+        return path
 
+    @classmethod
     def ensurelocal(self, path: str) -> str:
         """Ensures that a path to a storage tier is provided relative to the local filesystem."""
 
-        assert len(self)==1, 'Specify one tier'
+        # infer storage tier from file path
+        engram_tier = {'engram_tier': tier for tier in self.fetch('engram_tier') if tier in path}
 
-        return path.replace(self.getremotepath(), self.getlocalpath())
+        # convert remote path parts to local
+        path = path.replace((self & engram_tier).getremotepath(), (self & engram_tier).getlocalpath())
+
+        return path
 
 
 # ==========

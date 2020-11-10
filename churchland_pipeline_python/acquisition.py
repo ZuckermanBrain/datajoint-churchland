@@ -1,5 +1,6 @@
 import datajoint as dj
 import os, re
+import neo
 from . import lab, equipment, reference, action
 from typing import List, Tuple
 
@@ -131,6 +132,31 @@ class EphysRecording(dj.Manual):
         ephys_file_name:      varchar(255)      # ephys recording file name
         ephys_file_extension: varchar(255)      # ephys recording file extension
         """
+
+        def load(self):
+            """Loads an ephys file."""
+
+            assert len(self) == 1, 'Specify one recording file'
+
+            # fetch full file path
+            ephys_file_path = self.projfilepath().fetch1('ephys_file_path')
+
+            # ensure local file path
+            ephys_file_path = reference.EngramTier.ensurelocal(ephys_file_path)
+
+            # load file based on file extension
+            ephys_file_extension = self.fetch1('ephys_file_extension')
+             
+            if re.match('ns\d$', ephys_file_extension):
+
+                reader = neo.rawio.BlackrockRawIO(ephys_file_path)
+                reader.parse_header()
+
+                return reader
+
+            else:
+                print('File type {} unrecognized'.format(ephys_file_extension))
+                return None
 
         def projfilepath(self):
             """Project full file path into table."""

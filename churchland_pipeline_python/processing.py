@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from . import acquisition, equipment, reference
 from .utilities import datasync, datajointutils as dju
 from scipy import signal
+from decimal import *
 
 schema = dj.schema(dj.config.get('database.prefix') + 'churchland_common_processing')
 
@@ -150,10 +151,24 @@ class Filter(dj.Lookup):
             # get second order sections
             sos = signal.butter(n, Wn, btype, fs=fs, output='sos')
 
-            # filter input
-            z = signal.sosfilt(sos, y, axis=axis)
+            # pad input array
+            y_len = np.array(y.shape)
 
-            return z            
+            deficit = [2**np.ceil(np.log2(2*L)) - L for L in y_len]
+            deficit = [x + x % 2 for x in deficit]
+            pad_len = [int(x / 2) if idx==axis else 0 for idx, x in enumerate(deficit)]
+
+            y_pad = np.pad(y, [(L, L) for L in pad_len], 'edge')
+
+            # filter input
+            y_filt = signal.sosfilt(sos, y_pad, axis=axis)
+
+            # truncate filtered signal to original length
+            y_filt = y_filt[
+                tuple([np.s_[pad:-pad] if idx==axis else np.s_[::] for idx, pad in enumerate(pad_len)])
+            ]
+
+            return y_filt
         
 
     class Gaussian(dj.Part):
@@ -202,34 +217,23 @@ class SyncBlock(dj.Imported):
 
     def make(self, key):
 
-        # sync channel ID
-        sync_rel = acquisition.EphysRecording.Channel & key & {'ephys_channel_type': 'sync'}
-        sync_id, sync_idx = sync_rel.fetch1('ephys_channel_id', 'ephys_channel_idx')
+        # fetch sync channel index
+        sync_idx = (acquisition.EphysRecording.Channel & key & {'ephys_channel_type': 'sync'}).fetch1('ephys_channel_idx')
 
         # fetch local ephys recording file path and sample rate
         fs_ephys = (acquisition.EphysRecording & key).fetch1('ephys_recording_sample_rate')
         ephys_file_path = (acquisition.EphysRecording.File & key).projfilepath().fetch1('ephys_file_path')
 
         # ensure local path
-        ephys_file_path = (reference.EngramTier & {'engram_tier': 'locker'}).ensurelocal(ephys_file_path)
+        ephys_file_path = reference.EngramTier.ensurelocal(ephys_file_path)
 
         # read NSx file
         reader = neo.rawio.BlackrockRawIO(ephys_file_path)
         reader.parse_header()
 
-        # sync signal gain
-        id_idx, gain_idx = [
-            idx for idx, name in enumerate(reader.header['signal_channels'].dtype.names) \
-            if name in ['id','gain']
-        ]
-        sync_gain = next(chan[gain_idx] for chan in reader.header['signal_channels'] if chan[id_idx]==sync_id)
-
-        # extract NSx channel data from memory map (within a nested dictionary)
-        nsx_data = next(iter(reader.nsx_datas.values()))
-        nsx_data = next(iter(nsx_data.values()))
-
-        # extract sync signal from NSx array and apply gain
-        sync_signal = sync_gain * nsx_data[:, sync_idx]
+        # read and rescale sync signal
+        raw_signal = reader.get_analogsignal_chunk(block_index=0, seg_index=0, channel_indexes=[sync_idx])
+        sync_signal = reader.rescale_signal_raw_to_float(raw_signal, dtype='float64', channel_indexes=[sync_idx])
 
         # parse sync signal
         sync_block = datasync.decodesyncsignal(sync_signal, fs_ephys)
@@ -389,6 +393,64 @@ class Neuron(dj.Imported):
         neuron_template: longblob # neuron action potential waveform template
         """
 
+        def plot(self, x_pad: float=1, y_pad: float=1):
+
+            assert len(Neuron & self) == 1, 'Specify one neuron'
+
+            neuron_key = (Neuron & self).fetch1('KEY')
+            
+            # electrode array model electrodes table
+            array_electrodes = equipment.ElectrodeArrayModel.Electrode & (acquisition.BrainChannelGroup & neuron_key)
+
+            # number of rows and columns on the array
+            unique_electrode_x = dj.U('electrode_x').aggr(array_electrodes, count='count(*)')
+            n_columns = len(unique_electrode_x)
+            n_rows = np.array(unique_electrode_x.fetch('count')).max()
+
+            # origin coordinate
+            origin = np.vstack((array_electrodes).fetch('electrode_x', 'electrode_y')).min(axis=1)
+
+            # x and y scales
+            x_scale = (np.diff(sorted(unique_electrode_x.fetch('electrode_x'))).min() if n_columns > 1 else 1)
+
+            min_dy_per_column = np.array([
+                np.diff(sorted((array_electrodes & elec_x).fetch('electrode_y'))).min() 
+                for elec_x in unique_electrode_x.fetch('KEY')
+            ])
+            y_scale = (min_dy_per_column.min() if n_rows > 1 else 1)
+
+            # center and re-scale array electrode coordinates
+            array_electrodes_scaled = array_electrodes.proj(
+                electrode_x_norm='(electrode_x-{})/{}'.format(origin[0], x_scale / Decimal(str(x_pad))),
+                electrode_y_norm='(electrode_y-{})/{}'.format(origin[1], y_scale / Decimal(str(y_pad)))
+            )
+
+            # electrode array configuration for the recorded neuron
+            electrode_config = equipment.ElectrodeArrayConfig.Electrode & (acquisition.BrainChannelGroup & neuron_key)
+
+            # neuron templates and scaled x-y coordinates
+            neuron_templates, x_coords, y_coords = (self * electrode_config * array_electrodes_scaled)\
+                .fetch('neuron_template', 'electrode_x_norm', 'electrode_y_norm')
+
+            # mean center templates
+            neuron_templates = np.stack(neuron_templates)
+            neuron_templates -= neuron_templates.mean(axis=1, keepdims=True)
+
+            # scaled template time vector
+            t = np.linspace(-0.5, 0.5, neuron_templates.shape[1])
+
+            # absolute maximum template value
+            template_max = abs(neuron_templates).max()
+
+            # plot
+            plt.figure(figsize=(2*n_columns, n_rows/2))
+
+            for x_coord, y_coord, template in zip(x_coords.astype(float), y_coords.astype(float), neuron_templates):
+
+                plt.plot(t + x_coord, (template/template_max) + y_coord, 'k');
+
+
+
     def make(self, key):
 
         # get path to sort files
@@ -398,7 +460,7 @@ class Neuron(dj.Imported):
         # load sort data
         if brain_sort & {'software': 'Kilosort'}:
             
-            t_spike = np.load(brain_sort_path + 'spike_times.npy')
+            t_spike = np.load(brain_sort_path + 'spike_times.npy').astype(int)
             cluster_id = np.load(brain_sort_path + 'spike_clusters.npy')
             cluster_group = pd.read_csv(brain_sort_path + 'cluster_group.tsv', delimiter='\t')
 
@@ -413,13 +475,61 @@ class Neuron(dj.Imported):
             return None
 
         # construct neuron keys
-        neuron_key = [
+        neuron_keys = [
             dict(**key, neuron_id=idx, neuron_isolation=group, neuron_spike_indices=t_spike[cluster_id == clus])
             for idx, (clus, group) in enumerate(zip(cluster_group['cluster_id'], cluster_group['group']))
         ]
 
-        # //TODO add templates (these will need to be reconstructed post-hoc, as the template IDs and cluster IDs
-        # are not guaranteed to match after manual curation in Phy https://phy.readthedocs.io/en/latest/terminology/)
+        # load ephys file
+        reader = (acquisition.EphysRecording.File & key).load()
+
+        n_samples = reader.get_signal_size(block_index=0, seg_index=0)
+
+        # fetch ephys channel keys and indices
+        channel_keys = (acquisition.BrainChannelGroup.Channel & key).fetch('KEY')
+        channel_indices = [chan_key['ephys_channel_idx'] for chan_key in channel_keys]
+
+        # waveform duration (s)
+        WAVEFORM_DUR = 2e-3
+
+        # waveform length
+        fs = (acquisition.EphysRecording & key).fetch1('ephys_recording_sample_rate')
+        half_wave_len = int(round((fs * WAVEFORM_DUR) / 2))
+
+        # construct template keys
+        template_keys = []
+        for neuron_key in neuron_keys:
+
+            # read raw waveforms
+            raw_waveforms = [
+                reader.get_analogsignal_chunk(
+                    block_index=0, 
+                    seg_index=0, 
+                    i_start=int(t_spk - half_wave_len),
+                    i_stop=int(t_spk + half_wave_len),
+                    channel_indexes=channel_indices
+                )
+            for t_spk in neuron_key['neuron_spike_indices']
+            if t_spk >= half_wave_len and t_spk < n_samples-half_wave_len
+            ]
+
+            # rescale waveforms
+            waveforms = np.array([
+                reader.rescale_signal_raw_to_float(raw_waveform, dtype='float64', channel_indexes=channel_indices)
+                for raw_waveform in raw_waveforms
+            ])
+
+            # average waveforms across spikes to get templates
+            templates = waveforms.mean(axis=0).T
+
+            # aggregate templates into keys
+            template_keys.extend([
+                dict(key, neuron_id=neuron_key['neuron_id'], **chan_key, neuron_template=template) 
+                for chan_key, template in zip(channel_keys, templates)
+            ])
 
         # insert neurons
-        self.insert(neuron_key)
+        self.insert(neuron_keys)
+
+        # insert templates
+        self.Template.insert(template_keys)

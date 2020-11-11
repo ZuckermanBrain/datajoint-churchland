@@ -233,7 +233,7 @@ class SyncBlock(dj.Imported):
 
         # read and rescale sync signal
         raw_signal = reader.get_analogsignal_chunk(block_index=0, seg_index=0, channel_indexes=[sync_idx])
-        sync_signal = reader.rescale_signal_raw_to_float(raw_signal, dtype='float64', channel_indexes=[sync_idx])
+        sync_signal = reader.rescale_signal_raw_to_float(raw_signal, dtype='float64', channel_indexes=[sync_idx]).flatten()
 
         # parse sync signal
         sync_block = datasync.decodesyncsignal(sync_signal, fs_ephys)

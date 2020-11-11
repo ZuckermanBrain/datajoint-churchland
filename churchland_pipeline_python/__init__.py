@@ -6,6 +6,10 @@ from dotenv import load_dotenv, find_dotenv
 # load env file
 load_dotenv(join(dirname(__file__), '..', '.env')) 
 
+dj.config['database.host'] = os.getenv('DJ_HOST')
+dj.config['database.user'] = os.getenv('DJ_USER')
+dj.config['database.password'] = os.getenv('DJ_PASS')
+
 # write mode to database prefix (only for sandbox installation)
 dj.config['database.prefix'] = (os.getenv("MODE") + '_' \
     if not dj.config['database.host'].startswith('datajoint.u19motor.zi.columbia.edu') and os.getenv("MODE") is not None else '')

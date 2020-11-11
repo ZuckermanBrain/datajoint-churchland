@@ -51,9 +51,16 @@ def readtrialparams(file_path):
 
     assert file_path.endswith('.params'), 'Unrecognized Speedgoat parameters file'
 
+    # read trial number
+    trial_num = re.search(r'beh_(\d*)',file_path).group(1)
+
     # read params from file
     with open(file_path,'r') as f:
         data = np.fromfile(file=f, dtype=np.uint8)
+
+    if len(data) == 0:
+        print('Trial {} excluded due to missing parameters'.format(trial_num))
+        return None
 
     # read parameter keys and values from string
     paramStr = ';' + ''.join([chr(x) for x in data[num_clock_bytes:]])
@@ -87,13 +94,13 @@ def readtrialdata(file_path, success_state, sample_rate):
     """
 
     assert file_path.endswith('.data'), 'Unrecognized Speedgoat data file'
+
+    # read trial number
+    trial_num = re.search(r'beh_(\d*)',file_path).group(1)
     
     # read data from file
     with open(file_path,'r') as f:
         data = np.fromfile(file=f, dtype=np.uint8)
-
-    # read trial number
-    trial_num = re.search(r'beh_(\d*)',file_path).group(1)
 
     # reshape data stream
     nBytesPerTrial = int(num_clock_bytes + num_len_bytes + np.uint16(data[num_clock_bytes : num_clock_bytes+1]))
@@ -157,15 +164,20 @@ def readtrialdata(file_path, success_state, sample_rate):
 
     # trial result
     lastState = SgTrial['task_state'][-1]
+    
     if lastState < success_state:
         print('Trial {} was incomplete and excluded'.format(trial_num))
+        return None
+
     else:
         if lastState == success_state:
             SgTrial['successful_trial'] = 1
         else:
             SgTrial['successful_trial'] = 0
 
-    # remove undecoded keys
-    SgTrial = {k: v for k,v in zip(SgTrial.keys(), SgTrial.values()) if not isinstance(v,str)}
-                
-    return SgTrial
+        # remove undecoded keys
+        SgTrial = {k: v for k,v in zip(SgTrial.keys(), SgTrial.values()) if not isinstance(v,str)}
+                    
+        return SgTrial
+
+    

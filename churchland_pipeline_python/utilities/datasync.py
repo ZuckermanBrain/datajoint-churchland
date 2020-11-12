@@ -53,28 +53,57 @@ def decodesyncsignal(sync_signal, fs, max_sample_err=2, max_time_step=0.2):
 
     # extract timing code from sync blocks
     new_block_idx = [edge_idx[i] for i in first_pulse]
-    sync_block = [dict(start=new_block_idx[i], code=pulse_len[first_pulse[i]+range(0,63,2)]) for i in range(len(new_block_idx))]
+    sync_blocks = [dict(start=new_block_idx[i], code=pulse_len[first_pulse[i]+range(0,63,2)]) for i in range(len(new_block_idx))]
 
-    # check for corrupted sync blocks (if any pulse lengths deviates excessively from expected)
-    sync_block = ([dict(**d, corrupted=any(np.min(abs(d['code'] - np.array([[expected_pulse_len['low']],[expected_pulse_len['high']]])), axis=0) > max_sample_err)) for d in sync_block])
+    # infer corrupted sync blocks by comparing code with expected pulse lengths
+    expected_code_lengths = np.array([expected_pulse_len['low'], expected_pulse_len['high']]).reshape((2,1))
 
+    for block in sync_blocks:
+
+        # absolute difference between block code and expected code lengths
+        code_error = np.min(abs(block['code'] - expected_code_lengths), axis=0)
+
+        # initialize record of corrupted sync blocks if large errors in any code pulse
+        block.update(corrupted=any(code_error > max_sample_err))
+
+    # convert timing code to binary
+    for block in sync_blocks:
+
+        block.update(code=(
+            np.round((block['code'] - expected_pulse_len['low'])/expected_pulse_len['low'])
+            if not block['corrupted'] else None
+        ))
+    
     # decode sync blocks
-    pow_2 = [2**i for i in range(32)]
-    binary_code = [np.round((d['code'] - expected_pulse_len['low'])/expected_pulse_len['low']) if d['corrupted']==False else None for d in sync_block]
-    sync_block = [dict(**d, time=sum(bin_code * pow_2)/10 if d['corrupted']==False else np.nan) for d, bin_code in zip(sync_block, binary_code)]
+    pow_2 = np.array([2**i for i in range(32)])
 
-    # update list of corrupted blocks if any unusually large jumps in time
-    max_sim_time = sync_block[0]['time'] + num_samples/fs
-    for i in range(1,len(sync_block)):
-        if not (sync_block[i]['corrupted'] or sync_block[i-1]['corrupted']):
-            sync_block[i].update(corrupted = (sync_block[i]['time']>sync_block[i-1]['time']+max_time_step) or sync_block[i]['time']>max_sim_time)
+    [block.update(time=(sum(block['code'] * pow_2)/10 if not block['corrupted'] else np.nan)) \
+        for block in sync_blocks];
+
+    # indicate any blocks whose encoded time exceeds the recording duration as corrupted
+    t_max = sync_blocks[0]['time'] + num_samples/fs
+
+    [block.update(corrupted=block['time'] > t_max) for block in sync_blocks if not block['corrupted']];
+
+    # indicate any blocks with large sequential time steps or time reversals as corrupted
+    for idx, block in enumerate(sync_blocks, start=1):
+
+        if not block['corrupted']:
+            
+            block.update(corrupted=(
+                block['time'] > (sync_blocks[idx-1]['time'] + max_time_step) or 
+                block['time'] < sync_blocks[idx-1]['time']
+            ))
 
     # throw warning for high proportions of corrupted sync blocks
-    p_corrupted = 100 * sum([sync_block[i]['corrupted'] for i in range(len(sync_block))])/len(sync_block)
+    p_corrupted = 100 * len([block for block in sync_blocks if block['corrupted']]) / len(sync_blocks)
     if p_corrupted > 10:
         warnings.warn('{:.2f}% corrupted sync blocks. Timing estimate may be unreliable.'.format(p_corrupted))
 
-    return sync_block
+    # return uncorrupted sync blocks
+    sync_blocks = [block for block in sync_blocks if not block['corrupted']]
+
+    return sync_blocks
 
 
 def ephystrialstart(fs_ephys, trial_time, sync_block_start, sync_block_time):
@@ -108,7 +137,7 @@ def ephystrialstart(fs_ephys, trial_time, sync_block_start, sync_block_time):
             # sample index range containing the nearest sync block
             idx_range = range(\
                 np.floor(sync_block_start_bins[nearest_block]).astype(int), \
-                1+np.ceil(sync_block_start_bins[1+nearest_block]).astype(int))
+                1+np.ceil(sync_block_start_bins[-2]).astype(int))
 
             # nearest sample to the encoded trial start time
             ephys_trial_start_idx[i0] = next(i for i in idx_range if samp2time(i,nearest_block) >= t0)

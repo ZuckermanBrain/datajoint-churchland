@@ -50,6 +50,59 @@ class EphysChannelQuality(dj.Manual):
 
 
 @schema
+class EphysSync(dj.Imported):
+    definition = """
+    # Ephys synchronization record with behavior
+    -> acquisition.EphysRecording.File
+    """
+
+    # process recordings with sync signal
+    key_source = acquisition.EphysRecording.File \
+        & (acquisition.EphysRecording.Channel & {'ephys_channel_type':'sync'})
+
+    class Block(dj.Part):
+        definition = """
+        # Behavior sync blocks, decoded from ephys files
+        -> master
+        sync_block_start: int unsigned # sample index (ephys time base) corresponding to the beginning of the sync block
+        ---
+        sync_block_time: double        # encoded simulation time (Speedgoat time base)
+        """
+
+    def make(self, key):
+
+        # fetch sync channel index
+        sync_idx = (acquisition.EphysRecording.Channel & key & {'ephys_channel_type': 'sync'}).fetch1('ephys_channel_idx')
+
+        # fetch local ephys recording file path and sample rate
+        fs_ephys = (acquisition.EphysRecording & key).fetch1('ephys_recording_sample_rate')
+        ephys_file_path = (acquisition.EphysRecording.File & key).projfilepath().fetch1('ephys_file_path')
+
+        # ensure local path
+        ephys_file_path = reference.EngramTier.ensurelocal(ephys_file_path)
+
+        # read NSx file
+        reader = neo.rawio.BlackrockRawIO(ephys_file_path)
+        reader.parse_header()
+
+        # read and rescale sync signal
+        raw_signal = reader.get_analogsignal_chunk(block_index=0, seg_index=0, channel_indexes=[sync_idx])
+        sync_signal = reader.rescale_signal_raw_to_float(raw_signal, dtype='float64', channel_indexes=[sync_idx]).flatten()
+
+        # parse sync signal
+        sync_blocks = datasync.decodesyncsignal(sync_signal, fs_ephys)
+
+        # append ephys recording data
+        block_keys = [dict(key, sync_block_start=block['start'], sync_block_time=block['time']) for block in sync_blocks]
+
+        # insert sync record
+        self.insert1(key)
+
+        # insert sync blocks
+        self.Block.insert(block_keys)
+
+
+@schema
 class Filter(dj.Lookup):
     definition = """
     # Filter bank
@@ -200,51 +253,6 @@ class Filter(dj.Lookup):
                 z /= fx.max()
 
             return z
-
-
-@schema
-class SyncBlock(dj.Imported):
-    definition = """
-    # Speedgoat sync blocks, decoded from ephys files
-    -> acquisition.EphysRecording.File
-    sync_block_start: int unsigned # sample index (ephys time base) corresponding to the beginning of the sync block
-    ---
-    sync_block_time: double        # encoded simulation time (Speedgoat time base)
-    """
-
-    key_source = acquisition.EphysRecording.File \
-        & (acquisition.EphysRecording.Channel & {'ephys_channel_type':'sync'})
-
-    def make(self, key):
-
-        # fetch sync channel index
-        sync_idx = (acquisition.EphysRecording.Channel & key & {'ephys_channel_type': 'sync'}).fetch1('ephys_channel_idx')
-
-        # fetch local ephys recording file path and sample rate
-        fs_ephys = (acquisition.EphysRecording & key).fetch1('ephys_recording_sample_rate')
-        ephys_file_path = (acquisition.EphysRecording.File & key).projfilepath().fetch1('ephys_file_path')
-
-        # ensure local path
-        ephys_file_path = reference.EngramTier.ensurelocal(ephys_file_path)
-
-        # read NSx file
-        reader = neo.rawio.BlackrockRawIO(ephys_file_path)
-        reader.parse_header()
-
-        # read and rescale sync signal
-        raw_signal = reader.get_analogsignal_chunk(block_index=0, seg_index=0, channel_indexes=[sync_idx])
-        sync_signal = reader.rescale_signal_raw_to_float(raw_signal, dtype='float64', channel_indexes=[sync_idx]).flatten()
-
-        # parse sync signal
-        sync_block = datasync.decodesyncsignal(sync_signal, fs_ephys)
-
-        # remove corrupted blocks
-        sync_block = [block for block in sync_block if not block['corrupted']]
-
-        # append ephys recording data
-        block_key = [dict(**key, sync_block_start=block['start'], sync_block_time=block['time']) for block in sync_block]
-
-        self.insert(block_key)
 
 
 # =======

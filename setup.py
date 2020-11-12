@@ -10,10 +10,6 @@ if sys.version_info <  min_py_version:
 
 here = path.abspath(path.dirname(__file__))
 
-# read in version number into __version__
-with open(path.join(here, 'datajoint', 'version.py')) as f:
-    exec(f.read())
-
 with open(path.join(here, 'requirements.txt')) as f:
     requirements = f.read().split()
 
@@ -24,7 +20,7 @@ setup(
     author='Najja Marshall',
     author_email='njm2149@columbia.edu',
     packages=find_packages(exclude=[]),
-    install_requires=requirements,
+    install_requires=['datajoint'],
     python_requires='~={}.{}'.format(*min_py_version)
 )
 

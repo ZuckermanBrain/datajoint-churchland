@@ -10,10 +10,6 @@ if sys.version_info <  min_py_version:
 
 here = path.abspath(path.dirname(__file__))
 
-# read in version number into __version__
-with open(path.join(here, 'datajoint', 'version.py')) as f:
-    exec(f.read())
-
 with open(path.join(here, 'requirements.txt')) as f:
     requirements = f.read().split()
 

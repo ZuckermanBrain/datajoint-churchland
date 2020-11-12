@@ -1,7 +1,7 @@
 bokeh>=1.2
 colorcet
 datajoint>=0.12
-dotenv
+python-dotenv
 holoviews
 matplotlib
 neo>=0.8.0

@@ -133,14 +133,10 @@ class Filter(dj.Lookup):
             B = (math.gamma(a)*math.gamma(b))/math.gamma(a+b)
             fx = (x**(a-1) * (1-x)**(b-1))/B
 
-            # filter input
-            z = signal.fftconvolve(y, fx, mode='same', axes=axis)
+            # pad and filter input
+            y_filt = Filter.pad_filter(y, fx, axis=axis, normalize=normalize)
 
-            # normalize by magnitude of impule response
-            if normalize:
-                z /= fx.max()
-
-            return z
+            return y_filt
         
 
     class Boxcar(dj.Part):
@@ -161,14 +157,10 @@ class Filter(dj.Lookup):
             # impulse response
             fx = np.concatenate((np.zeros(half_wid), np.ones(wid), np.zeros(half_wid)))
 
-            # filter input
-            z = signal.fftconvolve(y, fx, mode='same', axes=axis)
+            # pad and filter input
+            y_filt = Filter.pad_filter(y, fx, axis=axis, normalize=normalize)
 
-            # normalize by magnitude of impule response
-            if normalize:
-                z /= fx.max()
-
-            return z
+            return y_filt
     
 
     class Butterworth(dj.Part):
@@ -204,22 +196,8 @@ class Filter(dj.Lookup):
             # get second order sections
             sos = signal.butter(n, Wn, btype, fs=fs, output='sos')
 
-            # pad input array
-            y_len = np.array(y.shape)
-
-            deficit = [2**np.ceil(np.log2(2*L)) - L for L in y_len]
-            deficit = [x + x % 2 for x in deficit]
-            pad_len = [int(x / 2) if idx==axis else 0 for idx, x in enumerate(deficit)]
-
-            y_pad = np.pad(y, [(L, L) for L in pad_len], 'edge')
-
             # filter input
-            y_filt = signal.sosfilt(sos, y_pad, axis=axis)
-
-            # truncate filtered signal to original length
-            y_filt = y_filt[
-                tuple([np.s_[pad:-pad] if idx==axis else np.s_[::] for idx, pad in enumerate(pad_len)])
-            ]
+            y_filt = signal.sosfiltfilt(sos, y, axis=axis)
 
             return y_filt
         
@@ -245,14 +223,35 @@ class Filter(dj.Lookup):
             x = np.arange(-wid,wid)
             fx = 1/(sd*np.sqrt(2*np.pi)) * np.exp(-x**2/(2*sd**2))
 
-            # filter input
-            z = signal.fftconvolve(y, fx, mode='same', axes=axis)
+            # pad and filter input
+            y_filt = Filter.pad_filter(y, fx, axis=axis, normalize=normalize)
 
-            # normalize by magnitude of impule response
-            if normalize:
-                z /= fx.max()
+            return y_filt
 
-            return z
+    @classmethod
+    def pad_filter(self, y, fx, axis=0, normalize=False):
+
+        # pad data array to length of impulse
+        pad_len = [2 * (int(len(fx)/2), ) if idx==axis else (0,0) for idx in range(y.ndim)]
+
+        y_pad = np.pad(y, pad_len, 'reflect')
+
+        # reshape impulse response to match data array shape along filter dimension
+        fx = fx.reshape(tuple(len(fx) if idx==axis else 1 for idx in range(y.ndim)))
+
+        # filter input
+        y_filt = signal.fftconvolve(y_pad, fx, mode='same', axes=axis)
+
+        # truncate filtered signal to original length
+        y_filt = y_filt[
+            tuple([np.s_[pad[0]:-pad[1]] if idx==axis else np.s_[::] for idx, pad in enumerate(pad_len)])
+        ]
+
+        # normalize by magnitude of impule response
+        if normalize:
+            y_filt /= y_filt.max()
+
+        return y_filt
 
 
 # =======

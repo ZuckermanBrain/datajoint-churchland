@@ -103,7 +103,7 @@ class BehaviorRecording(dj.Manual):
         behavior_file_extension: varchar(255)      # behavior recording file extension
         """
 
-        def projfilepath(self):
+        def proj_file_path(self):
             """Project full file path into table."""
 
             return (self * BehaviorRecording).proj(
@@ -139,7 +139,7 @@ class EphysRecording(dj.Manual):
             assert len(self) == 1, 'Specify one recording file'
 
             # fetch full file path
-            ephys_file_path = self.projfilepath().fetch1('ephys_file_path')
+            ephys_file_path = self.proj_file_path().fetch1('ephys_file_path')
 
             # ensure local file path
             ephys_file_path = reference.EngramTier.ensurelocal(ephys_file_path)
@@ -158,7 +158,7 @@ class EphysRecording(dj.Manual):
                 print('File type {} unrecognized'.format(ephys_file_extension))
                 return None
 
-        def projfilepath(self):
+        def proj_file_path(self):
             """Project full file path into table."""
 
             return (self * EphysRecording).proj(

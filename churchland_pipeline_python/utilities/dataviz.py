@@ -2,7 +2,9 @@
 """Data visualization.
 
 Todo:
-    * populatedependents
+    * overlay multiple attributes
+    * apply functions to attributes
+    * colormaps
 """
 
 import datajoint as dj
@@ -30,8 +32,8 @@ DEFAULT = dict(
         limit_figures=10,
         limit_subplots=25,
         limit_layers=500,
-        limit_rows=10,
-        limit_columns=5,
+        limit_rows=50,
+        limit_columns=10,
     ),
     style = dict(
         kind='line',
@@ -53,124 +55,142 @@ DEFAULT = dict(
 
 def plot_table(
     table: DataJointTable, 
-    y: List[str],
+    y: str,
     x: str=None,
     group_by: List[str]=None,
     stack_by: List[str]=None,
-    apply: List=None,
     layout: dict=None,
     style: dict=None,
     axes: dict=None,
     labels: dict=None,
     ) -> None:
-        """Plot DataJoint table."""
+    """Plot DataJoint table.
 
-        # update defaults with inputs
-        if layout:
-            layout = dict(DEFAULT['layout'], **layout)
-        else:
-            layout = DEFAULT['layout'].copy()
+    Flexible function for plotting any attribute from a DataJoint table.
+    Generates one or more figures composed of one or more subplots.
+    Use optional group_by parameter to specify which attributes to aggregate within a figure.
+    Use optional stack_by parameter to specify which attributes to stack within a subplot.
+    Add layout, style, axes dictionarys to overwrite default parameters.
+    Add labels dict to convert attribute names to axes labels/figure titles.
 
-        if style:
-            style = dict(DEFAULT['style'], **style)
-        else:
-            style = DEFAULT['style'].copy()
-        
-        if axes:
-            axes = dict(DEFAULT['axes'], **axes)
-        else:
-            axes = DEFAULT['axes'].copy()
+    Args:
+        table (DataJointTable): table (base or derived)
+        y (str): attribute name to plot on y-axis
+        x (str, optional): attribute name to plot y-data against. Defaults to None.
+        group_by (List[str], optional): attributes to group plotted data within a figure. Defaults to None.
+        stack_by (List[str], optional): attributes to stack plotted data within a subplot. Defaults to None.
+        layout (dict, optional): layout parameters. Defaults to None.
+        style (dict, optional): plot style parameters. Defaults to None.
+        axes (dict, optional): axes parameters. Defaults to None.
+        labels (dict, optional): attribute name to figure text mapping. Defaults to None.
+    """
 
-        # setup pages
-        layout_keys = make_figure_layout(table, group_by, stack_by, layout)
+    # update defaults with inputs
+    if layout:
+        layout = dict(DEFAULT['layout'], **layout)
+    else:
+        layout = DEFAULT['layout'].copy()
 
-        # fetch data
-        if x:
-            key_set, x_dataset, y_dataset = table.fetch('KEY', x, y)
-        else:
-            key_set, y_dataset = table.fetch('KEY', y)
+    if style:
+        style = dict(DEFAULT['style'], **style)
+    else:
+        style = DEFAULT['style'].copy()
+    
+    if axes:
+        axes = dict(DEFAULT['axes'], **axes)
+    else:
+        axes = DEFAULT['axes'].copy()
 
-        # plot data
-        for layout_key in layout_keys:
+    # setup pages
+    layout_keys = make_figure_layout(table, group_by, stack_by, layout)
 
-            n_rows, n_columns = layout_key['subplot'].shape
+    # fetch data
+    if x:
+        key_set, x_dataset, y_dataset = table.fetch('KEY', x, y)
+    else:
+        key_set, y_dataset = table.fetch('KEY', y)
 
-            fig, axs = plt.subplots(n_rows, n_columns, figsize=layout['figsize'], sharex=axes['sharex'], sharey=axes['sharey'])
+    # plot data
+    for layout_key in layout_keys:
 
-            axs = np.array(axs).reshape((n_rows, n_columns))
+        n_rows, n_columns = layout_key['subplot'].shape
 
-            figure_key = layout_key['figure']
-            subplot_keys = layout_key['subplot'].flatten()
+        fig, axs = plt.subplots(n_rows, n_columns, figsize=layout['figsize'], sharex=axes['sharex'], sharey=axes['sharey'])
 
-            for nd_idx, plot_key, layer_keys \
-                in zip(np.ndindex((n_rows, n_columns)), subplot_keys, layout_key['layer']):
+        axs = np.array(axs).reshape((n_rows, n_columns))
 
-                if not plot_key:
-                    axs[nd_idx].axis('off')
-                    continue
+        figure_key = layout_key['figure']
+        subplot_keys = layout_key['subplot'].flatten()
 
-                # aggregate keys
-                if np.any(layer_keys):
-                    axs_keys = [dict(figure_key, **plot_key, **layer_key) for layer_key in layer_keys]
-                else:
-                    axs_keys = [dict(figure_key, **plot_key)]                
+        for nd_idx, plot_key, layer_keys \
+            in zip(np.ndindex((n_rows, n_columns)), subplot_keys, layout_key['layer']):
 
-                # extract x and y data from datasets
-                y_data = np.array([yy for yy, kk in zip(y_dataset, key_set) if kk in axs_keys])
+            if not plot_key:
+                axs[nd_idx].axis('off')
+                continue
 
-                if x:
-                    x_data = np.array([xx for xx, kk in zip(x_dataset, key_set) if kk in axs_keys])
-                else:
-                    x_data = np.arange(y_data.shape[1])
+            # aggregate keys
+            if np.any(layer_keys):
+                axs_keys = [dict(figure_key, **plot_key, **layer_key) for layer_key in layer_keys]
+            else:
+                axs_keys = [dict(figure_key, **plot_key)]                
 
-                # plot data
-                if style['kind'] == 'line':
-                    axs[nd_idx].plot(x_data.T, y_data.T, 'k');
+            # extract x and y data from datasets
+            y_data = np.array([yy for yy, kk in zip(y_dataset, key_set) if kk in axs_keys])
 
-                elif style['kind'] == 'raster':
-                    for yi, yy in enumerate(y_data):
-                        axs[nd_idx].scatter(
-                            x_data[np.flatnonzero(yy)], yi + yy[np.flatnonzero(yy)], 
-                            c=style['color_map'], s=style['marker_size']
-                        )
+            if x:
+                x_data = np.array([xx for xx, kk in zip(x_dataset, key_set) if kk in axs_keys])
+            else:
+                x_data = np.arange(y_data.shape[1])
 
-                # format x-axis
-                if x:
-                    axs[nd_idx].set_xlim([x_data.min(), x_data.max()])
+            # plot data
+            if style['kind'] == 'line':
+                axs[nd_idx].plot(x_data.T, y_data.T, 'k');
 
-                # format y-axis
+            elif style['kind'] == 'raster':
+                for yi, yy in enumerate(y_data):
+                    axs[nd_idx].scatter(
+                        x_data[np.flatnonzero(yy)], yi + yy[np.flatnonzero(yy)], 
+                        c=style['color_map'], s=style['marker_size']
+                    )
+
+            # format x-axis
+            if x:
+                axs[nd_idx].set_xlim([x_data.min(), x_data.max()])
+
+            # format y-axis
+            y_lim = axs[nd_idx].get_ylim()
+            if axes['y_tick_step']:
+                axs[nd_idx].set_ylim([
+                    min(0, min(y_lim[0], np.floor(y_data.min() / axes['y_tick_step']) * axes['y_tick_step'])), 
+                    max(y_lim[1], np.ceil(y_data.max() / axes['y_tick_step']) * axes['y_tick_step'])
+                ])
                 y_lim = axs[nd_idx].get_ylim()
-                if axes['y_tick_step']:
-                    axs[nd_idx].set_ylim([
-                        min(0, min(y_lim[0], np.floor(y_data.min() / axes['y_tick_step']) * axes['y_tick_step'])), 
-                        max(y_lim[1], np.ceil(y_data.max() / axes['y_tick_step']) * axes['y_tick_step'])
-                    ])
-                    y_lim = axs[nd_idx].get_ylim()
-                    axs[nd_idx].set_yticks(np.arange(y_lim[0], y_lim[1]+axes['y_tick_step'], axes['y_tick_step']))
+                axs[nd_idx].set_yticks(np.arange(y_lim[0], y_lim[1]+axes['y_tick_step'], axes['y_tick_step']))
 
-                # format spines
-                [axs[nd_idx].spines[edge].set_visible(False) for edge in ['top','right']];
+            # format spines
+            [axs[nd_idx].spines[edge].set_visible(False) for edge in ['top','right']];
 
-                # x-axis label
-                if labels and x in labels.keys():
-                    axs[nd_idx].set_xlabel(labels[x])
+            # x-axis label
+            if labels and x in labels.keys():
+                axs[nd_idx].set_xlabel(labels[x])
 
-                # y-axis label
-                if labels and y in labels.keys():
-                    axs[nd_idx].set_ylabel(labels[y])
+            # y-axis label
+            if labels and y in labels.keys():
+                axs[nd_idx].set_ylabel(labels[y])
 
-                # subplot title
-                if labels:
-                    subplot_title = [labels[key].format(plot_key[key]) for key in plot_key.keys() if key in labels.keys()]
-                    axs[nd_idx].set_title('. '.join(subplot_title))
+            # subplot title
+            if labels:
+                subplot_title = [labels[key].format(plot_key[key]) for key in plot_key.keys() if key in labels.keys()]
+                axs[nd_idx].set_title('. '.join(subplot_title))
 
-            # adjust subplot layout
-            fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+        # adjust subplot layout
+        fig.tight_layout(rect=[0, 0.03, 1, 0.95])
 
-            # figure title
-            if labels and len(axs.ravel()) > 1:
-                figure_title = [labels[key].format(figure_key[key]) for key in figure_key.keys() if key in labels.keys()]
-                fig.suptitle('. '.join(figure_title))
+        # figure title
+        if labels and len(axs.ravel()) > 1:
+            figure_title = [labels[key].format(figure_key[key]) for key in figure_key.keys() if key in labels.keys()]
+            fig.suptitle('. '.join(figure_title))
 
 
 # ------------------

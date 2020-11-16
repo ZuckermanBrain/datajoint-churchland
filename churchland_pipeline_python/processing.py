@@ -6,7 +6,7 @@ import numpy as np
 import scipy.io as sio
 import matplotlib.pyplot as plt
 from . import acquisition, equipment, reference
-from .utilities import datasync, datajointutils as dju
+from .utilities import datasync
 from scipy import signal
 from decimal import *
 
@@ -76,7 +76,7 @@ class EphysSync(dj.Imported):
 
         # fetch local ephys recording file path and sample rate
         fs_ephys = (acquisition.EphysRecording & key).fetch1('ephys_recording_sample_rate')
-        ephys_file_path = (acquisition.EphysRecording.File & key).projfilepath().fetch1('ephys_file_path')
+        ephys_file_path = (acquisition.EphysRecording.File & key).proj_file_path().fetch1('ephys_file_path')
 
         # ensure local path
         ephys_file_path = reference.EngramTier.ensurelocal(ephys_file_path)
@@ -90,7 +90,7 @@ class EphysSync(dj.Imported):
         sync_signal = reader.rescale_signal_raw_to_float(raw_signal, dtype='float64', channel_indexes=[sync_idx]).flatten()
 
         # parse sync signal
-        sync_blocks = datasync.decodesyncsignal(sync_signal, fs_ephys)
+        sync_blocks = datasync.decode_sync_signal(sync_signal, fs_ephys)
 
         # append ephys recording data
         block_keys = [dict(key, sync_block_start=block['start'], sync_block_time=block['time']) for block in sync_blocks]

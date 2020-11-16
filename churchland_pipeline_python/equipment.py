@@ -487,10 +487,10 @@ class ElectrodeArrayConfig(dj.Lookup):
         """Easy insert new config file."""
 
         # match electrode array
-        array_key = next(iter(datajointutils.matchfuzzykey({electrode_array: ElectrodeArray}).values()))
+        _, array_key = datajointutils.match_fuzzy_key(ElectrodeArray, electrode_array)
 
         # append next available config ID to array key
-        new_config_id = datajointutils.nextuniqueint(ElectrodeArrayConfig, 'electrode_array_config_id', array_key)
+        new_config_id = datajointutils.next_unique_int(ElectrodeArrayConfig, 'electrode_array_config_id', array_key)
         config_key = dict(array_key, electrode_array_config_id=new_config_id)
 
         # make channel keys using input ordering

@@ -7,7 +7,7 @@ import warnings
 from itertools import compress
 
 
-def decodesyncsignal(sync_signal, fs, max_sample_err=2, max_time_step=0.2):
+def decode_sync_signal(sync_signal, fs, max_sample_err=2, max_time_step=0.2):
 
     # number of data samples
     num_samples = len(sync_signal)
@@ -106,7 +106,7 @@ def decodesyncsignal(sync_signal, fs, max_sample_err=2, max_time_step=0.2):
     return sync_blocks
 
 
-def ephystrialstart(fs_ephys, trial_time, sync_block_start, sync_block_time):
+def get_ephys_trial_start(fs_ephys, trial_time, sync_block_start, sync_block_time):
 
     # trial start time (Speedgoat clock)
     speedgoat_trial_start_time = [t[0] for t in trial_time]

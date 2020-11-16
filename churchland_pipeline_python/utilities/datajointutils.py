@@ -40,9 +40,7 @@ def getchildren(table: DataJointTable, context: FrameType=None) -> List[DataJoin
         context = getcontext(table)
 
     # get child names
-    graph = table.connection.dependencies
-    graph.load()
-    child_names = list(graph.children(table.full_table_name).keys())
+    child_names = list(table().children().keys())
 
     # get child tables
     children = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in child_names]
@@ -58,9 +56,7 @@ def getparents(table: DataJointTable, context: FrameType=None) -> List[DataJoint
         context = getcontext(table)
 
     # get parent names
-    graph = table.connection.dependencies
-    graph.load()
-    parent_names = list(graph.parents(table.full_table_name).keys())
+    parent_names = list(table().parents().keys())
 
     # get parent tables
     parents = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in parent_names]
@@ -75,12 +71,18 @@ def getparts(master_table: DataJointTable, context: FrameType=None) -> List[Data
     if not context:
         context = getcontext(master_table)
 
-    # full master table name
-    master_name = master_table.full_table_name
+    # database table name pattern
+    db_name = re.compile('\.`(.*?)(_{2}|`)')
 
-    # full part table names
-    part_names = [table_name for table_name in master_table().descendants() 
-        if (table_name != master_name and table_name[:-2].startswith(master_name[:-2]))]
+    # full master table name (without schema)
+    master_name = db_name.search(master_table.full_table_name).group(1)
+
+    # child table names
+    child_names = list(master_table().children().keys())
+
+    # part table names (children whose names are a subset of the master)
+    part_names = [name for name in child_names
+        if db_name.search(name) and master_name in db_name.search(name).group(1)]
 
     # get part tables
     part_tables = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in part_names]
@@ -131,15 +133,8 @@ def insertpart(master: DataJointTable, part_name: str, **kwargs) -> None:
             # cross reference
             assert not any([kwargs == entity_attr for entity_attr in part_entity_attr]), 'Duplicate entry!'
 
-        # get next master ID
-        if not(master()):
-            new_id = 0
-        else:
-            all_id = master.fetch(master_attr_name)
-            new_id = next(i for i in range(2+max(all_id)) if i not in all_id)
-
         # insert ID to master table
-        master_key = {master_attr_name: new_id}
+        master_key = {master_attr_name: nextuniqueint(master, master_attr_name)}
         master.insert1(master_key)
 
         # insert entry to part table

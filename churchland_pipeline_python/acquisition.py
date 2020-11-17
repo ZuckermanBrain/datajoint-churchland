@@ -142,7 +142,7 @@ class EphysRecording(dj.Manual):
             ephys_file_path = self.proj_file_path().fetch1('ephys_file_path')
 
             # ensure local file path
-            ephys_file_path = reference.EngramTier.ensurelocal(ephys_file_path)
+            ephys_file_path = reference.EngramTier.ensure_local(ephys_file_path)
 
             # load file based on file extension
             ephys_file_extension = self.fetch1('ephys_file_extension')

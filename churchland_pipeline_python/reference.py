@@ -20,7 +20,7 @@ class EngramTier(dj.Lookup):
         ['staging']
     ]
 
-    def getremotepath(self):
+    def get_remote_path(self):
         """Returns remote path (relative to U19 server) to a storage tier."""
 
         assert len(self)==1, 'Specify one tier'
@@ -30,7 +30,7 @@ class EngramTier(dj.Lookup):
         return os.path.sep.join(path_parts) 
 
 
-    def getlocalpath(self):
+    def get_local_path(self):
         """Returns local path (inferred based on OS) to a storage tier."""
 
         assert len(self)==1, 'Specify one tier'
@@ -64,26 +64,26 @@ class EngramTier(dj.Lookup):
         return os.path.sep.join(path_parts)
 
     @classmethod
-    def ensureremote(self, path: str) -> str:
+    def ensure_remote(self, path: str) -> str:
         """Ensures that a path to a storage tier is provided relative to the remote (U19) server."""
 
         # infer storage tier from file path
         engram_tier = {'engram_tier': tier for tier in self.fetch('engram_tier') if tier in path}
 
         # convert local path parts to remote
-        path = path.replace((self & engram_tier).getlocalpath(), (self & engram_tier).getremotepath())
+        path = path.replace((self & engram_tier).get_local_path(), (self & engram_tier).get_remote_path())
 
         return path
 
     @classmethod
-    def ensurelocal(self, path: str) -> str:
+    def ensure_local(self, path: str) -> str:
         """Ensures that a path to a storage tier is provided relative to the local filesystem."""
 
         # infer storage tier from file path
         engram_tier = {'engram_tier': tier for tier in self.fetch('engram_tier') if tier in path}
 
         # convert remote path parts to local
-        path = path.replace((self & engram_tier).getremotepath(), (self & engram_tier).getlocalpath())
+        path = path.replace((self & engram_tier).get_remote_path(), (self & engram_tier).get_local_path())
 
         return path
 

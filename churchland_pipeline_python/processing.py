@@ -79,7 +79,7 @@ class EphysSync(dj.Imported):
         ephys_file_path = (acquisition.EphysRecording.File & key).proj_file_path().fetch1('ephys_file_path')
 
         # ensure local path
-        ephys_file_path = reference.EngramTier.ensurelocal(ephys_file_path)
+        ephys_file_path = reference.EngramTier.ensure_local(ephys_file_path)
 
         # read NSx file
         reader = neo.rawio.BlackrockRawIO(ephys_file_path)
@@ -315,6 +315,9 @@ class MotorUnit(dj.Imported):
         emg_sort = EmgSort & key
         emg_sort_path = emg_sort.fetch1('emg_sort_path')
 
+        # ensure local path
+        emg_sort_path = reference.EngramTier.ensure_local(emg_sort_path)
+
         # load sort data
         if emg_sort & {'software': 'Myosort'}:
 
@@ -463,6 +466,9 @@ class Neuron(dj.Imported):
         # get path to sort files
         brain_sort = BrainSort & key
         brain_sort_path = brain_sort.fetch1('brain_sort_path')
+
+        # ensure local path
+        brain_sort_path = reference.EngramTier.ensure_local(brain_sort_path)
 
         # load sort data
         if brain_sort & {'software': 'Kilosort'}:

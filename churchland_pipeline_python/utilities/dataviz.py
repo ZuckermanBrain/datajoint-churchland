@@ -10,7 +10,8 @@ Todo:
 import datajoint as dj
 import inspect, re, math
 import numpy as np
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt, matplotlib.colors as mplcol
+import colorcet as cc
 from typing import NewType, Tuple, List
 
 import timeit
@@ -38,13 +39,18 @@ DEFAULT = dict(
     style = dict(
         kind='line',
         marker_size=3,
-        color_map='k',
+        color=None,
+        color_map=cc.blues,
+        reverse_color_map=False,
     ),
     axes = dict(
         sharex=False,
         sharey=False,
-        y_min=None,
+        x_lim=(None, None),
+        y_lim=(None, None),
         y_tick_step=None,
+        show_legend=False,
+        sparse_legend=False,
     )
 )
 
@@ -138,27 +144,63 @@ def plot_table(
             # extract x and y data from datasets
             y_data = np.array([yy for yy, kk in zip(y_dataset, key_set) if kk in axs_keys])
 
+            n_trials, n_samples = y_data.shape
+
             if x:
                 x_data = np.array([xx for xx, kk in zip(x_dataset, key_set) if kk in axs_keys])
             else:
-                x_data = np.arange(y_data.shape[1])
+                x_data = np.repeat(np.arange(n_samples)[np.newaxis,:], n_trials, axis=0)
+
+            # ensure matched x-y data lengths
+            if x_data.shape[1] != n_samples:
+                x_data = np.repeat(np.linspace(x_data.min(), x_data.max(), n_samples)[np.newaxis,:], n_trials, axis=0)
+
+            # set color map
+            if style['color'] is not None:
+                cmap = np.repeat(style['color'], n_trials)
+            else:
+                cmap = mplcol.LinearSegmentedColormap.from_list('cmap', style['color_map'])
+                cmap = cmap(np.linspace(0, 1, n_trials))
+
+            if style['reverse_color_map']:
+                cmap = np.flipud(cmap)
 
             # plot data
             if style['kind'] == 'line':
-                axs[nd_idx].plot(x_data.T, y_data.T, 'k');
+                for trial, (kk, xx, yy, cc) in enumerate(zip(axs_keys, x_data, y_data, cmap)):
+
+                    line_label = (labels[stack_by[0]].format(kk[stack_by[0]]) \
+                        if stack_by and stack_by[0] in labels.keys() and axes['show_legend'] else '')
+
+                    if axes['sparse_legend'] and trial in range(1, len(axs_keys)-1):
+                        line_label = ''
+
+                    axs[nd_idx].plot(xx, yy, color=cc, label=line_label);
 
             elif style['kind'] == 'raster':
-                for yi, yy in enumerate(y_data):
-                    axs[nd_idx].scatter(
-                        x_data[np.flatnonzero(yy)], yi + yy[np.flatnonzero(yy)], 
-                        c=style['color_map'], s=style['marker_size']
-                    )
+                for trial, (xx, yy, cc) in enumerate(zip(x_data, y_data, cmap)):
+                    spk_idx = np.flatnonzero(yy)
+                    if np.any(spk_idx):
+                        axs[nd_idx].scatter(
+                            xx[spk_idx], np.repeat(trial, len(spk_idx)), c=cc, s=style['marker_size']
+                        )
 
             # format x-axis
-            if x:
-                axs[nd_idx].set_xlim([x_data.min(), x_data.max()])
+            axs[nd_idx].set_xlim([x_data.min(), x_data.max()])               
+
+            if any(map(lambda x: x is not None, axes['x_lim'])):
+                axs[nd_idx].set_xlim([
+                    (axes['x_lim'][0] if axes['x_lim'][0] is not None else axs[nd_idx].get_xlim()[0]),
+                    (axes['x_lim'][1] if axes['x_lim'][1] is not None else axs[nd_idx].get_xlim()[1])
+                ])
 
             # format y-axis
+            if any(map(lambda x: x is not None, axes['y_lim'])):
+                axs[nd_idx].set_ylim([
+                    (axes['y_lim'][0] if axes['y_lim'][0] is not None else axs[nd_idx].get_ylim()[0]),
+                    (axes['y_lim'][1] if axes['y_lim'][1] is not None else axs[nd_idx].get_ylim()[1])
+                ])
+
             y_lim = axs[nd_idx].get_ylim()
             if axes['y_tick_step']:
                 axs[nd_idx].set_ylim([
@@ -170,6 +212,10 @@ def plot_table(
 
             # format spines
             [axs[nd_idx].spines[edge].set_visible(False) for edge in ['top','right']];
+
+            # legend
+            if axes['show_legend']:
+                axs[nd_idx].legend()
 
             # x-axis label
             if labels and x in labels.keys():
@@ -221,7 +267,7 @@ def make_figure_layout(
     if not layout['grid_attr']:
         layout['grid_attr'] = []
 
-    # overwrite group attributes with grid attributes if
+    # merge grid attr with group attributes
     if layout['grid_attr']:
         group_by = layout['grid_attr']
 
@@ -263,7 +309,7 @@ def make_figure_layout(
         if layout['grid_attr']: # infer from grid attributes
 
             # fetch column keys
-            column_keys = np.array((dj.U(layout['grid_attr'][1]) & table).fetch('KEY'))
+            column_keys = np.array((dj.U(layout['grid_attr'][1]) & table).fetch('KEY', order_by=layout['grid_attr'][1]))
 
             # limit columns
             n_columns = len(column_keys)
@@ -278,7 +324,7 @@ def make_figure_layout(
             layout.update(n_columns=len(column_keys))
 
             # fetch row keys (fetching dj.U keys is much faster than fetching the attribute directly)
-            row_keys = np.array([(dj.U(layout['grid_attr'][0]) & (table & column_key)).fetch('KEY') for column_key in column_keys])
+            row_keys = np.array([(dj.U(layout['grid_attr'][0]) & (table & column_key)).fetch('KEY', order_by=layout['grid_attr'][0]) for column_key in column_keys])
 
             # limit rows
             max_rows = layout['limit_rows']

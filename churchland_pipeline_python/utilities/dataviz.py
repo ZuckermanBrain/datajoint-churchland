@@ -28,7 +28,7 @@ DEFAULT = dict(
         figsize=(12,8),
         n_rows=None,
         n_columns=None,
-        grid_attr=None,
+        grid_attr=(),
         orientation=None,
         limit_figures=10,
         limit_subplots=25,
@@ -42,6 +42,9 @@ DEFAULT = dict(
         color=None,
         color_map=cc.blues,
         reverse_color_map=False,
+        remove_spines=('top', 'right'),
+        show_x_ticks=True,
+        show_y_ticks=True,
     ),
     axes = dict(
         sharex=False,
@@ -63,8 +66,10 @@ def plot_table(
     table: DataJointTable, 
     y: str,
     x: str=None,
-    group_by: List[str]=None,
-    stack_by: List[str]=None,
+    group_by: Tuple[str]=(),
+    stack_by: Tuple[str]=(),
+    ignore: Tuple[str]=(),
+    track: Tuple[str]=(),
     layout: dict=None,
     style: dict=None,
     axes: dict=None,
@@ -108,13 +113,21 @@ def plot_table(
         axes = DEFAULT['axes'].copy()
 
     # setup pages
-    layout_keys = make_figure_layout(table, group_by, stack_by, layout)
+    layout_keys = make_figure_layout(table, group_by, stack_by, ignore, track, layout)
+
+    # initialize key and data attributes
+    key_attributes = list(filter(None, track))
+    data_attributes = list(filter(None, [x] + [y]))
 
     # fetch data
-    if x:
-        key_set, x_dataset, y_dataset = table.fetch('KEY', x, y)
-    else:
-        key_set, y_dataset = table.fetch('KEY', y)
+    data_set = table.proj(*(key_attributes + data_attributes)).fetch(as_dict=True)
+
+    # append table primary keys to set of key attributes
+    key_attributes = set(key_attributes + table.primary_key) - set(list(filter(None, ignore)))
+
+    # split key and data attributes
+    data_keys = [{k: v for k, v in d.items() if k in key_attributes} for d in data_set]
+    data_set = [{k: v for k, v in d.items() if k in data_attributes} for d in data_set]
 
     # plot data
     for layout_key in layout_keys:
@@ -142,12 +155,14 @@ def plot_table(
                 axs_keys = [dict(figure_key, **plot_key)]                
 
             # extract x and y data from datasets
-            y_data = np.array([yy for yy, kk in zip(y_dataset, key_set) if kk in axs_keys])
+            data = [d for d, k in zip(data_set, data_keys) if k in axs_keys]
+
+            y_data = np.array([d[y] for d in data])
 
             n_trials, n_samples = y_data.shape
 
             if x:
-                x_data = np.array([xx for xx, kk in zip(x_dataset, key_set) if kk in axs_keys])
+                x_data = np.array([d[x] for d in data])
             else:
                 x_data = np.repeat(np.arange(n_samples)[np.newaxis,:], n_trials, axis=0)
 
@@ -197,11 +212,12 @@ def plot_table(
             # format y-axis
             if any(map(lambda x: x is not None, axes['y_lim'])):
                 axs[nd_idx].set_ylim([
-                    (axes['y_lim'][0] if axes['y_lim'][0] is not None else axs[nd_idx].get_ylim()[0]),
-                    (axes['y_lim'][1] if axes['y_lim'][1] is not None else axs[nd_idx].get_ylim()[1])
+                    (axes['y_lim'][0] if axes['y_lim'][0] is not None else np.floor(y_data.min())),
+                    (axes['y_lim'][1] if axes['y_lim'][1] is not None else np.ceil(y_data.max()))
                 ])
 
             y_lim = axs[nd_idx].get_ylim()
+
             if axes['y_tick_step']:
                 axs[nd_idx].set_ylim([
                     min(0, min(y_lim[0], np.floor(y_data.min() / axes['y_tick_step']) * axes['y_tick_step'])), 
@@ -211,30 +227,54 @@ def plot_table(
                 axs[nd_idx].set_yticks(np.arange(y_lim[0], y_lim[1]+axes['y_tick_step'], axes['y_tick_step']))
 
             # format spines
-            [axs[nd_idx].spines[edge].set_visible(False) for edge in ['top','right']];
+            if any(style['remove_spines']):
+                [axs[nd_idx].spines[edge].set_visible(False) for edge in style['remove_spines']];
+
+            # format ticks
+            if not style['show_x_ticks']:
+                axs[nd_idx].set_xticks([])
+
+            if not style['show_y_ticks']:
+                axs[nd_idx].set_yticks([])
 
             # legend
             if axes['show_legend']:
                 axs[nd_idx].legend()
 
-            # x-axis label
-            if labels and x in labels.keys():
-                axs[nd_idx].set_xlabel(labels[x])
-
-            # y-axis label
-            if labels and y in labels.keys():
-                axs[nd_idx].set_ylabel(labels[y])
-
-            # subplot title
+            # label axes
             if labels:
-                subplot_title = [labels[key].format(plot_key[key]) for key in plot_key.keys() if key in labels.keys()]
-                axs[nd_idx].set_title('. '.join(subplot_title))
+
+                # x-axis
+                if x in labels.keys():
+                    axs[nd_idx].set_xlabel(labels[x])
+
+                if layout['grid_attr']:
+
+                    row_attr, col_attr = layout['grid_attr']
+
+                    # y-axis
+                    if row_attr in labels.keys() and nd_idx[1] == 0:
+                        axs[nd_idx].set_ylabel(labels[row_attr].format(plot_key[row_attr]))
+
+                    # title
+                    if col_attr in labels.keys() and nd_idx[0] == 0:
+                        axs[nd_idx].set_title(labels[col_attr].format(plot_key[col_attr]))
+
+                else:
+                    # y-axis
+                    if y in labels.keys():
+                        axs[nd_idx].set_ylabel(labels[y])
+
+                    # subplot
+                    if labels:
+                        subplot_title = [labels[key].format(plot_key[key]) for key in plot_key.keys() if key in labels.keys()]
+                        axs[nd_idx].set_title('. '.join(subplot_title))
 
         # adjust subplot layout
         fig.tight_layout(rect=[0, 0.03, 1, 0.95])
 
         # figure title
-        if labels and len(axs.ravel()) > 1:
+        if labels:
             figure_title = [labels[key].format(figure_key[key]) for key in figure_key.keys() if key in labels.keys()]
             fig.suptitle('. '.join(figure_title))
 
@@ -245,8 +285,10 @@ def plot_table(
 
 def make_figure_layout(
     table: DataJointTable,
-    group_by: List[str]=None,
-    stack_by: List[str]=None,
+    group_by: Tuple[str]=(),
+    stack_by: Tuple[str]=(),
+    ignore: Tuple[str]=(),
+    track: Tuple[str]=(),
     layout: dict=None,
     ):
     """Make figure layout."""
@@ -257,26 +299,19 @@ def make_figure_layout(
     else:
         layout = DEFAULT['layout'].copy()
 
-    # standardize input format
-    if not group_by:
-        group_by = []
-
-    if not stack_by:
-        stack_by = []
-
-    if not layout['grid_attr']:
-        layout['grid_attr'] = []
+    # tracked attributes
+    tracked_attributes = set(tuple(table.primary_key) + track) - set(ignore)
 
     # merge grid attr with group attributes
     if layout['grid_attr']:
         group_by = layout['grid_attr']
 
     # check group/stack attributes
-    assert set(group_by) <= set(table.primary_key), 'Group {} not in primary keys'.format(group_by)
-    assert set(stack_by) <= set(table.primary_key), 'Stack {} not in primary keys'.format(stack_by)
+    assert set(group_by) <= tracked_attributes, 'Group {} not in primary keys'.format(group_by)
+    assert set(stack_by) <= tracked_attributes, 'Stack {} not in primary keys'.format(stack_by)
 
     # get figure keys from attributes not in group or stack
-    separate_by = [attr for attr in table.primary_key if attr not in group_by + stack_by]
+    separate_by = [attr for attr in tracked_attributes if attr not in group_by + stack_by]
     figure_keys = (dj.U(*separate_by) & table).fetch('KEY')
     n_figures = len(figure_keys)
 

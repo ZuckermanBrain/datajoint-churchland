@@ -12,7 +12,7 @@ import inspect, re, math
 import numpy as np
 import matplotlib.pyplot as plt, matplotlib.colors as mplcol
 import colorcet as cc
-from typing import NewType, Tuple, List
+from typing import NewType, Tuple, List, Any
 
 import timeit
 
@@ -70,6 +70,8 @@ def plot_table(
     stack_by: Tuple[str]=(),
     ignore: Tuple[str]=(),
     track: Tuple[str]=(),
+    map_fcn: Any=None,
+    map_args: Any=None,
     layout: dict=None,
     style: dict=None,
     axes: dict=None,
@@ -144,7 +146,7 @@ def plot_table(
         for nd_idx, plot_key, layer_keys \
             in zip(np.ndindex((n_rows, n_columns)), subplot_keys, layout_key['layer']):
 
-            if not plot_key:
+            if plot_key is None:
                 axs[nd_idx].axis('off')
                 continue
 
@@ -158,6 +160,9 @@ def plot_table(
             data = [d for d, k in zip(data_set, data_keys) if k in axs_keys]
 
             y_data = np.array([d[y] for d in data])
+
+            if map_fcn:
+                y_data = np.array([map_fcn(y, *list(filter(None, map_args))) for y in y_data])
 
             n_trials, n_samples = y_data.shape
 
@@ -387,7 +392,7 @@ def make_figure_layout(
             if group_by:
                 subplot_keys = (dj.U(*group_by) & (table & layout_key['figure'])).fetch('KEY')
             else:
-                subplot_keys = [layout_key['figure']]
+                subplot_keys = [{}]
 
             subplot_keys = limit_subplots(subplot_keys)
             n_subplots = len(subplot_keys)
@@ -418,7 +423,7 @@ def make_figure_layout(
         if stack_by:
 
             layer_keys = np.array([np.array((dj.U(*stack_by) & (table & layout_key['figure'] & subplot_key)).fetch('KEY')) \
-                if subplot_key else None for subplot_key in layout_key['subplot'].ravel()])
+                if subplot_key is not None else None for subplot_key in layout_key['subplot'].ravel()])
         else:
             layer_keys = np.repeat(dict(), len(layout_key['subplot'].ravel()))
 

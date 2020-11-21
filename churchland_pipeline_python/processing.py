@@ -119,19 +119,44 @@ class Filter(dj.Lookup):
         beta = 5:         decimal(9,4) unsigned # shape parameter
         """ 
 
-        def filter(self, y, fs, axis=0, normalize=False):
+        def filt(
+            self, 
+            y: np.ndarray, 
+            fs: int, 
+            duration: float=None,
+            alpha: float=None,
+            beta: float=None,
+            axis: int=0, 
+            normalize: bool=False
+            ) -> np.ndarray:
+            """Filter with a Beta kernel.
 
-            assert len(self) == 1, 'Specify one filter'
+            Args:
+                y (np.ndarray): Data array
+                fs (int): Sample rate (Hz)
+                duration (float, optional): Kernel duration (s). If None, reads from table.
+                alpha (float, optional): Alpha shape parameter. If None, reads from table.
+                beta (float, optional): Beta shape parameter. If None, reads from table.
+                axis (int, optional): Axis to apply filter. Defaults to 0.
+                normalize (bool, optional): Whether to normalize the filtered array by the kernel amplitude. Defaults to False.
+
+            Returns:
+                y_filt (np.ndarray): Filtered data array.
+            """
+
+            if any(filter(None, (duration, alpha, beta))):
+
+                assert len(self) == 1, 'Specify one filter'
+
+                duration, alpha, beta = map(float, self.fetch1('duration', 'alpha', 'beta'))
 
             # convert parameters based on sample rate
             precision = int(np.ceil(np.log10(fs)))
-            x = np.arange(0, float(self.fetch1('duration')), 1/fs).round(precision)
+            x = np.arange(0, duration, 1/fs).round(precision)
 
             # impulse response
-            a = float(self.fetch1('alpha'))
-            b = float(self.fetch1('beta'))
-            B = (math.gamma(a)*math.gamma(b))/math.gamma(a+b)
-            fx = (x**(a-1) * (1-x)**(b-1))/B
+            B = (math.gamma(alpha) * math.gamma(beta))/math.gamma(alpha+beta)
+            fx = (x**(alpha-1) * (1-x)**(beta-1))/B
 
             # pad and filter input
             y_filt = Filter.pad_filter(y, fx, axis=axis, normalize=normalize)
@@ -146,16 +171,42 @@ class Filter(dj.Lookup):
         duration = 0.1: decimal(18,9) unsigned # filter duration (s)
         """
 
-        def filter(self, y, fs, axis=0, normalize=False):
+        def filt(
+            self, 
+            y: np.ndarray, 
+            fs: int, 
+            duration: float=None, 
+            axis: int=0, 
+            normalize: bool=False
+            ) -> np.ndarray:
+            """Filter with a boxcar kernel.
 
-            assert len(self) == 1, 'Specify one filter'
+            Args:
+                y (np.ndarray): Data array
+                fs (int): Sample rate (Hz)
+                duration (float, optional): Kernel duration (s). If None, reads from table.
+                axis (int, optional): Axis to apply filter. Defaults to 0.
+                normalize (bool, optional): Whether to normalize the filtered array by the kernel amplitude. Defaults to False.
+
+            Returns:
+                y_filt (np.ndarray): Filtered data array.
+            """
+
+            if duration is None:
+
+                assert len(self) == 1, 'Specify one filter'
+
+                duration = float(self.fetch1('duration'))
 
             # convert parameters based on sample rate
-            wid = int(round(fs * float(self.fetch1('duration'))))
-            half_wid = int(np.ceil(wid/2))
+            wid = 1 + int(round(fs * duration))
 
             # impulse response
-            fx = np.concatenate((np.zeros(half_wid), np.ones(wid), np.zeros(half_wid)))
+            fx = np.concatenate((
+                np.zeros(int(np.floor(wid/2))), 
+                np.ones(wid), 
+                np.zeros(int(np.ceil(wid/2)))
+            ))
 
             # pad and filter input
             y_filt = Filter.pad_filter(y, fx, axis=axis, normalize=normalize)
@@ -172,12 +223,36 @@ class Filter(dj.Lookup):
         high_cut = null: smallint unsigned # high-cut frequency (Hz)
         """
 
-        def filter(self, y, fs, axis=0):
+        def filt(
+            self, 
+            y: np.ndarray, 
+            fs: int, 
+            order: int=None,
+            low_cut: int=None,
+            high_cut: int=None,
+            axis: int=0, 
+            normalize: bool=False
+            ) -> np.ndarray:
+            """Filter with a Butterworth filter.
 
-            assert len(self) == 1, 'Specify one filter'
+            Args:
+                y (np.ndarray): Data array
+                fs (int): Sample rate (Hz)
+                order (int, optional): Filter order. If None, reads from table.
+                low_cut (int, optional): Low cut frequency (Hz). If None and high_cut or order is None, reads from table.
+                high_cut (int, optional): High cut frequency (Hz). If None and low_cut or order is None, reads from table.
+                axis (int, optional): Axis to apply filter. Defaults to 0.
+                normalize (bool, optional): Whether to normalize the filtered array by the kernel amplitude. Defaults to False.
 
-            # parse inputs
-            n, low_cut, high_cut = self.fetch1('order','low_cut','high_cut')
+            Returns:
+                y_filt (np.ndarray): Filtered data array.
+            """
+
+            if order is None and any(filter(None, (low_cut, high_cut))):
+
+                assert len(self) == 1, 'Specify one filter'
+
+                order, low_cut, high_cut = self.fetch1('order', 'low_cut', 'high_cut')
             
             assert low_cut or high_cut, 'Missing critical frequency or frequencies'
 
@@ -194,7 +269,7 @@ class Filter(dj.Lookup):
                 Wn = high_cut
 
             # get second order sections
-            sos = signal.butter(n, Wn, btype, fs=fs, output='sos')
+            sos = signal.butter(order, Wn, btype, fs=fs, output='sos')
 
             # filter input
             y_filt = signal.sosfiltfilt(sos, y, axis=axis)
@@ -211,13 +286,39 @@ class Filter(dj.Lookup):
         width = 4:  tinyint unsigned       # filter width (multiples of sd)
         """
 
-        def filter(self, y, fs, axis=0, normalize=False):
+        def filt(
+            self, 
+            y: np.ndarray, 
+            fs: int, 
+            sd: float=None,
+            width: int=None,
+            axis: int=0, 
+            normalize: bool=False
+            ) -> np.ndarray:
+            """Filter with a Gaussian kernel.
 
-            assert len(self) == 1, 'Specify one filter'
+            Args:
+                y (np.ndarray): Data array
+                fs (int): Sample rate (Hz)
+                sd (float, optional): Kernel standard deviation (s). If None, reads from table.
+                width (int, optional): Kernel width (multiples of sd). If None, reads from table.
+                axis (int, optional): Axis to apply filter. Defaults to 0.
+                normalize (bool, optional): Whether to normalize the filtered array by the kernel amplitude. Defaults to False.
+
+            Returns:
+                y_filt (np.ndarray): Filtered data array.
+            """
+
+            if sd is None and width is None:
+
+                assert len(self) == 1, 'Specify one filter'
+
+                sd = float(self.fetch1('sd'))
+                width = self.fetch1('width')
 
             # convert parameters based on sample rate
-            sd = fs * float(self.fetch1('sd'))
-            wid = round(sd * self.fetch1('width'))
+            sd = fs * sd
+            wid = round(sd * width)
 
             # impulse response
             x = np.arange(-wid,wid)

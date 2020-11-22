@@ -146,3 +146,8 @@ class Muscle(dj.Lookup):
         ['LonTri', 'triceps',          'long'],
         ['MedTri', 'triceps',          'medial']
     ]
+
+    def proj_full_name(self):
+        """Project full muscle name."""
+
+        return self.proj(full_muscle_name='CONCAT(muscle_head, " ", muscle)')

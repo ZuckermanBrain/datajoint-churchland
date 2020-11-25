@@ -17,7 +17,7 @@ from typing import NewType, Tuple, List
 
 DataJointTable = dj.user_tables.OrderedClass
 
-def getcontext(table: DataJointTable) -> FrameType:
+def get_context(table: DataJointTable) -> FrameType:
     """Gets table context."""
 
     # check stack for table context
@@ -32,17 +32,15 @@ def getcontext(table: DataJointTable) -> FrameType:
     return context
 
 
-def getchildren(table: DataJointTable, context: FrameType=None) -> List[DataJointTable]:
+def get_children(table: DataJointTable, context: FrameType=None) -> List[DataJointTable]:
     """Gets all child tables of a table."""
 
     # get table context
     if not context:
-        context = getcontext(table)
+        context = get_context(table)
 
     # get child names
-    graph = table.connection.dependencies
-    graph.load()
-    child_names = list(graph.children(table.full_table_name).keys())
+    child_names = list(table().children().keys())
 
     # get child tables
     children = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in child_names]
@@ -50,17 +48,15 @@ def getchildren(table: DataJointTable, context: FrameType=None) -> List[DataJoin
     return children
 
 
-def getparents(table: DataJointTable, context: FrameType=None) -> List[DataJointTable]:
+def get_parents(table: DataJointTable, context: FrameType=None) -> List[DataJointTable]:
     """Gets all parent tables of a table."""
 
     # get table context
     if not context:
-        context = getcontext(table)
+        context = get_context(table)
 
     # get parent names
-    graph = table.connection.dependencies
-    graph.load()
-    parent_names = list(graph.parents(table.full_table_name).keys())
+    parent_names = list(table().parents().keys())
 
     # get parent tables
     parents = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in parent_names]
@@ -68,19 +64,25 @@ def getparents(table: DataJointTable, context: FrameType=None) -> List[DataJoint
     return parents
 
 
-def getparts(master_table: DataJointTable, context: FrameType=None) -> List[DataJointTable]:
+def get_parts(master_table: DataJointTable, context: FrameType=None) -> List[DataJointTable]:
     """Gets all part tables of a master table."""
 
     # get table context
     if not context:
-        context = getcontext(master_table)
+        context = get_context(master_table)
 
-    # full master table name
-    master_name = master_table.full_table_name
+    # database table name pattern
+    db_name = re.compile('\.`(.*?)(_{2}|`)')
 
-    # full part table names
-    part_names = [table_name for table_name in master_table().descendants() 
-        if (table_name != master_name and table_name[:-2].startswith(master_name[:-2]))]
+    # full master table name (without schema)
+    master_name = db_name.search(master_table.full_table_name).group(1)
+
+    # child table names
+    child_names = list(master_table().children().keys())
+
+    # part table names (children whose names are a subset of the master)
+    part_names = [name for name in child_names
+        if db_name.search(name) and master_name in db_name.search(name).group(1)]
 
     # get part tables
     part_tables = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in part_names]
@@ -88,7 +90,7 @@ def getparts(master_table: DataJointTable, context: FrameType=None) -> List[Data
     return part_tables
 
 
-def insertpart(master: DataJointTable, part_name: str, **kwargs) -> None:
+def insert_part(master: DataJointTable, part_name: str, **kwargs) -> None:
     """Inserts an entry to master-part tables, given the master table, the part table name,
     and a set of keyword arguments containing the part table attributes. Checks to ensure that
     the keyword arguments are all valid attributes of the part table. Assumes that entries in 
@@ -96,7 +98,7 @@ def insertpart(master: DataJointTable, part_name: str, **kwargs) -> None:
     so that every entry is uniquely identifiable by its ID across all part tables."""
 
     # read master table attributes
-    master_table_attr = readattributes(master)
+    master_table_attr = read_attributes(master)
 
     # validate master table format
     assert len(master_table_attr) == 1, 'Master table has more than one attribute'
@@ -109,7 +111,7 @@ def insertpart(master: DataJointTable, part_name: str, **kwargs) -> None:
         part = getattr(master, part_name)
 
         # read part table attributes
-        part_table_attr = readattributes(part)
+        part_table_attr = read_attributes(part)
 
         # ensure keyword keys are members of secondary attributes list
         assert set(kwargs.keys()).issubset(set(part_table_attr.keys())), 'Unrecognized keyword argument(s)'
@@ -131,15 +133,8 @@ def insertpart(master: DataJointTable, part_name: str, **kwargs) -> None:
             # cross reference
             assert not any([kwargs == entity_attr for entity_attr in part_entity_attr]), 'Duplicate entry!'
 
-        # get next master ID
-        if not(master()):
-            new_id = 0
-        else:
-            all_id = master.fetch(master_attr_name)
-            new_id = next(i for i in range(2+max(all_id)) if i not in all_id)
-
         # insert ID to master table
-        master_key = {master_attr_name: new_id}
+        master_key = {master_attr_name: next_unique_int(master, master_attr_name)}
         master.insert1(master_key)
 
         # insert entry to part table
@@ -149,22 +144,24 @@ def insertpart(master: DataJointTable, part_name: str, **kwargs) -> None:
         print('Unrecognized part name: {}'.format(part_name))
 
 
-def matchfuzzykey(table_dict: dict) -> dict:
+def match_fuzzy_key(table: DataJointTable, fuzzy_key: tuple) -> (DataJointTable, dict):
     """Attemps to match a string or ordered sequence of strings with a primary key in the associated table."""
 
-    primary_key = {}
-    for fuzzy_key, table in table_dict.items():
+    # match fuzzy key with ordered primary keys in table
+    key_match = {k:v for k,v in zip(table.primary_key, ([fuzzy_key] if isinstance(fuzzy_key,str) else fuzzy_key))}
 
-        key = {k:v for k,v in zip(table.primary_key, ([fuzzy_key] if isinstance(fuzzy_key,str) else fuzzy_key))}
+    # fetch primary key(s)
+    key = (table & key_match).fetch('KEY')
+    if len(key) == 1:
+        key = key[0]
 
-        assert len(table & key), 'Unrecognized input {}. Limit table {} to one entry'.format(fuzzy_key, table.table_name)
+    # return query
+    query = table & key
 
-        primary_key.update({fuzzy_key: (table & key).fetch1('KEY')})
-
-    return primary_key
+    return query, key
 
 
-def nextkey(table: DataJointTable, index: int=0) -> dict:
+def next_key(table: DataJointTable, index: int=0) -> dict:
     """Gets the next (unpopulated) key for a table."""
 
     keys = (table.key_source - table).fetch("KEY")
@@ -174,7 +171,7 @@ def nextkey(table: DataJointTable, index: int=0) -> dict:
         return None
 
 
-def nextuniqueint(table: DataJointTable, attr: str, key: dict={}) -> int:
+def next_unique_int(table: DataJointTable, attr: str, key: dict={}) -> int:
     """Gets the smallest unique integer attribute value. Can restrict inferrence of unique values with an optional key."""
 
     if not(table & key):
@@ -186,7 +183,7 @@ def nextuniqueint(table: DataJointTable, attr: str, key: dict={}) -> int:
     return min_val
 
 
-def joinparts(
+def join_parts(
     master: DataJointTable,
     key: dict={},
     depth: int=1,
@@ -207,7 +204,7 @@ def joinparts(
 
     # get master context
     if not context:
-        context = getcontext(master)
+        context = get_context(master)
     
     parts = dict.fromkeys(range(1+depth),[])
     for layer in range(1 + depth):
@@ -216,7 +213,7 @@ def joinparts(
 
         else:
             # get part tables in next layer for each table in previous layer
-            parts[layer] = [part for parent in parts[layer - 1] for part in getparts(parent, context=context)]
+            parts[layer] = [part for parent in parts[layer - 1] for part in get_parts(parent, context=context)]
 
             # restrict part tables to those with attributes in the key
             parts[layer] = [part for part in parts[layer]
@@ -228,7 +225,7 @@ def joinparts(
     return joined_table, part_tables
 
 
-def readattributes(table: DataJointTable) -> dict:
+def read_attributes(table: DataJointTable) -> dict:
     """Reads the attribute names and default values for a table."""
 
     # parse table definition

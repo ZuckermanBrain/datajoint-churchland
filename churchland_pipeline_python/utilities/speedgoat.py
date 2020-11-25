@@ -9,18 +9,18 @@ from itertools import compress
 num_clock_bytes = 8
 num_len_bytes = 2
 
-def readtaskstates(filePath):
+def read_task_states(file_path):
     """Reads task states from .summary files
 
     Args:
-        filePath ([type]): [description]
+        file_path ([type]): [description]
 
     Returns:
         [type]: [description]
     """
     
     # read summary text from file
-    fid = open(filePath,'r')
+    fid = open(file_path,'r')
     summaryText = fid.read()
     fid.close()
     
@@ -39,7 +39,7 @@ def readtaskstates(filePath):
     
     return taskStates
     
-def readtrialparams(file_path):
+def read_trial_params(file_path):
     """Reads trial parameters from .params files
 
     Args:
@@ -81,7 +81,7 @@ def readtrialparams(file_path):
     
     return params
 
-def readtrialdata(file_path, success_state, sample_rate):
+def read_trial_data(file_path, success_state, sample_rate):
     """Reads trial data from .data files
 
     Args:

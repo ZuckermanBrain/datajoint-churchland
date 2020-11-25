@@ -77,6 +77,10 @@ def get_parts(master_table: DataJointTable, context: FrameType=None) -> List[Dat
     # full master table name (without schema)
     master_name = db_name.search(master_table.full_table_name).group(1)
 
+    graph = master_table().connection.dependencies
+    graph.load()
+
+
     # child table names
     child_names = list(master_table().children().keys())
 
@@ -93,7 +97,7 @@ def get_parts(master_table: DataJointTable, context: FrameType=None) -> List[Dat
 def insert_part(master: DataJointTable, part_name: str, **kwargs) -> None:
     """Inserts an entry to master-part tables, given the master table, the part table name,
     and a set of keyword arguments containing the part table attributes. Checks to ensure that
-    the keyword arguments are all valid attributes of the part table. Assumes that entries in 
+    the keyword arguments are all valid attributes of the part table. Assumes that entries in
     the master table are uniquely identified by an ID number. Creates a new ID for each new entry
     so that every entry is uniquely identifiable by its ID across all part tables."""
 
@@ -129,7 +133,7 @@ def insert_part(master: DataJointTable, part_name: str, **kwargs) -> None:
             part_entity_attr = [{k:float(v) for k,v in entity.items() \
                 if k != master_attr_name and v is not None} \
                 for entity in part_entity]
-            
+
             # cross reference
             assert not any([kwargs == entity_attr for entity_attr in part_entity_attr]), 'Duplicate entry!'
 
@@ -205,7 +209,7 @@ def join_parts(
     # get master context
     if not context:
         context = get_context(master)
-    
+
     parts = dict.fromkeys(range(1+depth),[])
     for layer in range(1 + depth):
         if layer == 0:

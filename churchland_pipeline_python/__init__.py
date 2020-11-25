@@ -4,7 +4,7 @@ from os.path import dirname, basename, isfile, join
 from dotenv import load_dotenv, find_dotenv
 
 # load env file
-load_dotenv(join(dirname(__file__), '..', '.env')) 
+load_dotenv(join(dirname(__file__), '..', '.env'))
 
 # write mode to database prefix (only for sandbox installation)
 dj.config['database.prefix'] = (os.getenv("MODE") + '_' \

@@ -17,6 +17,36 @@ from typing import NewType, Tuple, List
 
 DataJointTable = dj.user_tables.OrderedClass
 
+def flatten_blobs(records: list, blob_names: list) -> list:
+    """Flattens a list of dictionaries containing vector-valued attributes ("blobs").
+
+    Separates each blob in the list of attributes into its own dictionary 
+    with the scalar attributes duplicated. (Helpful for porting table entries to pandas.)
+
+    Args:
+        records (list): List of dictionaries.
+        blob_names (list): Attribute names in each dictionary to be flattened.
+
+    Returns:
+        flat_records (list): List of dictionaries, flattened over all blob names.
+    """
+    
+    # initialize output list
+    flat_records = []
+
+    for data in records:
+        
+        # extract tuple containing each set of blob values per dict
+        key_value_set = [X for X in zip(*[data[key_name] for key_name in blob_names])]
+
+        for key_values in key_value_set:
+
+            # flatten dictionaries over blob values
+            flat_records.append(dict(data, **{k:v for k,v in zip(blob_names, key_values)}))
+
+    return flat_records
+
+
 def get_context(table: DataJointTable) -> FrameType:
     """Gets table context."""
 

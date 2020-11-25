@@ -248,7 +248,7 @@ class Filter(dj.Lookup):
                 y_filt (np.ndarray): Filtered data array.
             """
 
-            if order is None and any(filter(None, (low_cut, high_cut))):
+            if order is None and not any(filter(None, (low_cut, high_cut))):
 
                 assert len(self) == 1, 'Specify one filter'
 

@@ -6,7 +6,7 @@ import numpy as np
 import scipy.io as sio
 import matplotlib.pyplot as plt
 from . import acquisition, equipment, reference
-from .utilities import datasync, datajointutils as dju
+from .utilities import datasync
 from scipy import signal
 from decimal import *
 
@@ -50,6 +50,59 @@ class EphysChannelQuality(dj.Manual):
 
 
 @schema
+class EphysSync(dj.Imported):
+    definition = """
+    # Ephys synchronization record with behavior
+    -> acquisition.EphysRecording.File
+    """
+
+    # process recordings with sync signal
+    key_source = acquisition.EphysRecording.File \
+        & (acquisition.EphysRecording.Channel & {'ephys_channel_type':'sync'})
+
+    class Block(dj.Part):
+        definition = """
+        # Behavior sync blocks, decoded from ephys files
+        -> master
+        sync_block_start: int unsigned # sample index (ephys time base) corresponding to the beginning of the sync block
+        ---
+        sync_block_time: double        # encoded simulation time (Speedgoat time base)
+        """
+
+    def make(self, key):
+
+        # fetch sync channel index
+        sync_idx = (acquisition.EphysRecording.Channel & key & {'ephys_channel_type': 'sync'}).fetch1('ephys_channel_idx')
+
+        # fetch local ephys recording file path and sample rate
+        fs_ephys = (acquisition.EphysRecording & key).fetch1('ephys_recording_sample_rate')
+        ephys_file_path = (acquisition.EphysRecording.File & key).proj_file_path().fetch1('ephys_file_path')
+
+        # ensure local path
+        ephys_file_path = reference.EngramTier.ensure_local(ephys_file_path)
+
+        # read NSx file
+        reader = neo.rawio.BlackrockRawIO(ephys_file_path)
+        reader.parse_header()
+
+        # read and rescale sync signal
+        raw_signal = reader.get_analogsignal_chunk(block_index=0, seg_index=0, channel_indexes=[sync_idx])
+        sync_signal = reader.rescale_signal_raw_to_float(raw_signal, dtype='float64', channel_indexes=[sync_idx]).flatten()
+
+        # parse sync signal
+        sync_blocks = datasync.decode_sync_signal(sync_signal, fs_ephys)
+
+        # append ephys recording data
+        block_keys = [dict(key, sync_block_start=block['start'], sync_block_time=block['time']) for block in sync_blocks]
+
+        # insert sync record
+        self.insert1(key)
+
+        # insert sync blocks
+        self.Block.insert(block_keys)
+
+
+@schema
 class Filter(dj.Lookup):
     definition = """
     # Filter bank
@@ -66,28 +119,49 @@ class Filter(dj.Lookup):
         beta = 5:         decimal(9,4) unsigned # shape parameter
         """ 
 
-        def filter(self, y, fs, axis=0, normalize=False):
+        def filt(
+            self, 
+            y: np.ndarray, 
+            fs: int, 
+            duration: float=None,
+            alpha: float=None,
+            beta: float=None,
+            axis: int=0, 
+            normalize: bool=False
+            ) -> np.ndarray:
+            """Filter with a Beta kernel.
 
-            assert len(self) == 1, 'Specify one filter'
+            Args:
+                y (np.ndarray): Data array
+                fs (int): Sample rate (Hz)
+                duration (float, optional): Kernel duration (s). If None, reads from table.
+                alpha (float, optional): Alpha shape parameter. If None, reads from table.
+                beta (float, optional): Beta shape parameter. If None, reads from table.
+                axis (int, optional): Axis to apply filter. Defaults to 0.
+                normalize (bool, optional): Whether to normalize the filtered array by the kernel amplitude. Defaults to False.
+
+            Returns:
+                y_filt (np.ndarray): Filtered data array.
+            """
+
+            if any(filter(None, (duration, alpha, beta))):
+
+                assert len(self) == 1, 'Specify one filter'
+
+                duration, alpha, beta = map(float, self.fetch1('duration', 'alpha', 'beta'))
 
             # convert parameters based on sample rate
             precision = int(np.ceil(np.log10(fs)))
-            x = np.arange(0, float(self.fetch1('duration')), 1/fs).round(precision)
+            x = np.arange(0, duration, 1/fs).round(precision)
 
             # impulse response
-            a = float(self.fetch1('alpha'))
-            b = float(self.fetch1('beta'))
-            B = (math.gamma(a)*math.gamma(b))/math.gamma(a+b)
-            fx = (x**(a-1) * (1-x)**(b-1))/B
+            B = (math.gamma(alpha) * math.gamma(beta))/math.gamma(alpha+beta)
+            fx = (x**(alpha-1) * (1-x)**(beta-1))/B
 
-            # filter input
-            z = signal.fftconvolve(y, fx, mode='same', axes=axis)
+            # pad and filter input
+            y_filt = Filter.pad_filter(y, fx, axis=axis, normalize=normalize)
 
-            # normalize by magnitude of impule response
-            if normalize:
-                z /= fx.max()
-
-            return z
+            return y_filt
         
 
     class Boxcar(dj.Part):
@@ -97,25 +171,47 @@ class Filter(dj.Lookup):
         duration = 0.1: decimal(18,9) unsigned # filter duration (s)
         """
 
-        def filter(self, y, fs, axis=0, normalize=False):
+        def filt(
+            self, 
+            y: np.ndarray, 
+            fs: int, 
+            duration: float=None, 
+            axis: int=0, 
+            normalize: bool=False
+            ) -> np.ndarray:
+            """Filter with a boxcar kernel.
 
-            assert len(self) == 1, 'Specify one filter'
+            Args:
+                y (np.ndarray): Data array
+                fs (int): Sample rate (Hz)
+                duration (float, optional): Kernel duration (s). If None, reads from table.
+                axis (int, optional): Axis to apply filter. Defaults to 0.
+                normalize (bool, optional): Whether to normalize the filtered array by the kernel amplitude. Defaults to False.
+
+            Returns:
+                y_filt (np.ndarray): Filtered data array.
+            """
+
+            if duration is None:
+
+                assert len(self) == 1, 'Specify one filter'
+
+                duration = float(self.fetch1('duration'))
 
             # convert parameters based on sample rate
-            wid = int(round(fs * float(self.fetch1('duration'))))
-            half_wid = int(np.ceil(wid/2))
+            wid = 1 + int(round(fs * duration))
 
             # impulse response
-            fx = np.concatenate((np.zeros(half_wid), np.ones(wid), np.zeros(half_wid)))
+            fx = np.concatenate((
+                np.zeros(int(np.floor(wid/2))), 
+                np.ones(wid), 
+                np.zeros(int(np.ceil(wid/2)))
+            ))
 
-            # filter input
-            z = signal.fftconvolve(y, fx, mode='same', axes=axis)
+            # pad and filter input
+            y_filt = Filter.pad_filter(y, fx, axis=axis, normalize=normalize)
 
-            # normalize by magnitude of impule response
-            if normalize:
-                z /= fx.max()
-
-            return z
+            return y_filt
     
 
     class Butterworth(dj.Part):
@@ -127,12 +223,36 @@ class Filter(dj.Lookup):
         high_cut = null: smallint unsigned # high-cut frequency (Hz)
         """
 
-        def filter(self, y, fs, axis=0):
+        def filt(
+            self, 
+            y: np.ndarray, 
+            fs: int, 
+            order: int=None,
+            low_cut: int=None,
+            high_cut: int=None,
+            axis: int=0, 
+            normalize: bool=False
+            ) -> np.ndarray:
+            """Filter with a Butterworth filter.
 
-            assert len(self) == 1, 'Specify one filter'
+            Args:
+                y (np.ndarray): Data array
+                fs (int): Sample rate (Hz)
+                order (int, optional): Filter order. If None, reads from table.
+                low_cut (int, optional): Low cut frequency (Hz). If None and high_cut or order is None, reads from table.
+                high_cut (int, optional): High cut frequency (Hz). If None and low_cut or order is None, reads from table.
+                axis (int, optional): Axis to apply filter. Defaults to 0.
+                normalize (bool, optional): Whether to normalize the filtered array by the kernel amplitude. Defaults to False.
 
-            # parse inputs
-            n, low_cut, high_cut = self.fetch1('order','low_cut','high_cut')
+            Returns:
+                y_filt (np.ndarray): Filtered data array.
+            """
+
+            if order is None and any(filter(None, (low_cut, high_cut))):
+
+                assert len(self) == 1, 'Specify one filter'
+
+                order, low_cut, high_cut = self.fetch1('order', 'low_cut', 'high_cut')
             
             assert low_cut or high_cut, 'Missing critical frequency or frequencies'
 
@@ -149,24 +269,10 @@ class Filter(dj.Lookup):
                 Wn = high_cut
 
             # get second order sections
-            sos = signal.butter(n, Wn, btype, fs=fs, output='sos')
-
-            # pad input array
-            y_len = np.array(y.shape)
-
-            deficit = [2**np.ceil(np.log2(2*L)) - L for L in y_len]
-            deficit = [x + x % 2 for x in deficit]
-            pad_len = [int(x / 2) if idx==axis else 0 for idx, x in enumerate(deficit)]
-
-            y_pad = np.pad(y, [(L, L) for L in pad_len], 'edge')
+            sos = signal.butter(order, Wn, btype, fs=fs, output='sos')
 
             # filter input
-            y_filt = signal.sosfilt(sos, y_pad, axis=axis)
-
-            # truncate filtered signal to original length
-            y_filt = y_filt[
-                tuple([np.s_[pad:-pad] if idx==axis else np.s_[::] for idx, pad in enumerate(pad_len)])
-            ]
+            y_filt = signal.sosfiltfilt(sos, y, axis=axis)
 
             return y_filt
         
@@ -180,71 +286,73 @@ class Filter(dj.Lookup):
         width = 4:  tinyint unsigned       # filter width (multiples of sd)
         """
 
-        def filter(self, y, fs, axis=0, normalize=False):
+        def filt(
+            self, 
+            y: np.ndarray, 
+            fs: int, 
+            sd: float=None,
+            width: int=None,
+            axis: int=0, 
+            normalize: bool=False
+            ) -> np.ndarray:
+            """Filter with a Gaussian kernel.
 
-            assert len(self) == 1, 'Specify one filter'
+            Args:
+                y (np.ndarray): Data array
+                fs (int): Sample rate (Hz)
+                sd (float, optional): Kernel standard deviation (s). If None, reads from table.
+                width (int, optional): Kernel width (multiples of sd). If None, reads from table.
+                axis (int, optional): Axis to apply filter. Defaults to 0.
+                normalize (bool, optional): Whether to normalize the filtered array by the kernel amplitude. Defaults to False.
+
+            Returns:
+                y_filt (np.ndarray): Filtered data array.
+            """
+
+            if sd is None and width is None:
+
+                assert len(self) == 1, 'Specify one filter'
+
+                sd = float(self.fetch1('sd'))
+                width = self.fetch1('width')
 
             # convert parameters based on sample rate
-            sd = fs * float(self.fetch1('sd'))
-            wid = round(sd * self.fetch1('width'))
+            sd = fs * sd
+            wid = round(sd * width)
 
             # impulse response
             x = np.arange(-wid,wid)
             fx = 1/(sd*np.sqrt(2*np.pi)) * np.exp(-x**2/(2*sd**2))
 
-            # filter input
-            z = signal.fftconvolve(y, fx, mode='same', axes=axis)
+            # pad and filter input
+            y_filt = Filter.pad_filter(y, fx, axis=axis, normalize=normalize)
 
-            # normalize by magnitude of impule response
-            if normalize:
-                z /= fx.max()
+            return y_filt
 
-            return z
+    @classmethod
+    def pad_filter(self, y, fx, axis=0, normalize=False):
 
+        # pad data array to length of impulse
+        pad_len = [2 * (int(len(fx)/2), ) if idx==axis else (0,0) for idx in range(y.ndim)]
 
-@schema
-class SyncBlock(dj.Imported):
-    definition = """
-    # Speedgoat sync blocks, decoded from ephys files
-    -> acquisition.EphysRecording.File
-    sync_block_start: int unsigned # sample index (ephys time base) corresponding to the beginning of the sync block
-    ---
-    sync_block_time: double        # encoded simulation time (Speedgoat time base)
-    """
+        y_pad = np.pad(y, pad_len, 'reflect')
 
-    key_source = acquisition.EphysRecording.File \
-        & (acquisition.EphysRecording.Channel & {'ephys_channel_type':'sync'})
+        # reshape impulse response to match data array shape along filter dimension
+        fx = fx.reshape(tuple(len(fx) if idx==axis else 1 for idx in range(y.ndim)))
 
-    def make(self, key):
+        # filter input
+        y_filt = signal.fftconvolve(y_pad, fx, mode='same', axes=axis)
 
-        # fetch sync channel index
-        sync_idx = (acquisition.EphysRecording.Channel & key & {'ephys_channel_type': 'sync'}).fetch1('ephys_channel_idx')
+        # truncate filtered signal to original length
+        y_filt = y_filt[
+            tuple([np.s_[pad[0]:-pad[1]] if idx==axis else np.s_[::] for idx, pad in enumerate(pad_len)])
+        ]
 
-        # fetch local ephys recording file path and sample rate
-        fs_ephys = (acquisition.EphysRecording & key).fetch1('ephys_recording_sample_rate')
-        ephys_file_path = (acquisition.EphysRecording.File & key).projfilepath().fetch1('ephys_file_path')
+        # normalize by magnitude of impule response
+        if normalize:
+            y_filt /= y_filt.max()
 
-        # ensure local path
-        ephys_file_path = reference.EngramTier.ensurelocal(ephys_file_path)
-
-        # read NSx file
-        reader = neo.rawio.BlackrockRawIO(ephys_file_path)
-        reader.parse_header()
-
-        # read and rescale sync signal
-        raw_signal = reader.get_analogsignal_chunk(block_index=0, seg_index=0, channel_indexes=[sync_idx])
-        sync_signal = reader.rescale_signal_raw_to_float(raw_signal, dtype='float64', channel_indexes=[sync_idx])
-
-        # parse sync signal
-        sync_block = datasync.decodesyncsignal(sync_signal, fs_ephys)
-
-        # remove corrupted blocks
-        sync_block = [block for block in sync_block if not block['corrupted']]
-
-        # append ephys recording data
-        block_key = [dict(**key, sync_block_start=block['start'], sync_block_time=block['time']) for block in sync_block]
-
-        self.insert(block_key)
+        return y_filt
 
 
 # =======
@@ -307,6 +415,9 @@ class MotorUnit(dj.Imported):
         # get path to sort files
         emg_sort = EmgSort & key
         emg_sort_path = emg_sort.fetch1('emg_sort_path')
+
+        # ensure local path
+        emg_sort_path = reference.EngramTier.ensure_local(emg_sort_path)
 
         # load sort data
         if emg_sort & {'software': 'Myosort'}:
@@ -456,6 +567,9 @@ class Neuron(dj.Imported):
         # get path to sort files
         brain_sort = BrainSort & key
         brain_sort_path = brain_sort.fetch1('brain_sort_path')
+
+        # ensure local path
+        brain_sort_path = reference.EngramTier.ensure_local(brain_sort_path)
 
         # load sort data
         if brain_sort & {'software': 'Kilosort'}:

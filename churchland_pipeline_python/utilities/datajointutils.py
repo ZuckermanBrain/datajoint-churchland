@@ -65,12 +65,20 @@ def get_context(table: DataJointTable) -> FrameType:
 def get_children(table: DataJointTable, context: FrameType=None) -> List[DataJointTable]:
     """Gets all child tables of a table."""
 
+    # child table names
+    child_names = list(table().children().keys())
+
+    if not child_names:
+
+        # load graph
+        graph = table().connection.dependencies
+        graph.load()
+
+        child_names = list(table().children().keys())
+
     # get table context
     if not context:
         context = get_context(table)
-
-    # get child names
-    child_names = list(table().children().keys())
 
     # get child tables
     children = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in child_names]
@@ -81,12 +89,20 @@ def get_children(table: DataJointTable, context: FrameType=None) -> List[DataJoi
 def get_parents(table: DataJointTable, context: FrameType=None) -> List[DataJointTable]:
     """Gets all parent tables of a table."""
 
+    # get parent names
+    parent_names = list(table().parents().keys())
+
+    if not parent_names:
+
+        # load graph
+        graph = table().connection.dependencies
+        graph.load()
+
+        parent_names = list(table().parents().keys())
+
     # get table context
     if not context:
         context = get_context(table)
-
-    # get parent names
-    parent_names = list(table().parents().keys())
 
     # get parent tables
     parents = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in parent_names]
@@ -97,6 +113,17 @@ def get_parents(table: DataJointTable, context: FrameType=None) -> List[DataJoin
 def get_parts(master_table: DataJointTable, context: FrameType=None) -> List[DataJointTable]:
     """Gets all part tables of a master table."""
 
+    # child table names
+    child_names = list(master_table().children().keys())
+
+    if not child_names:
+
+        # load graph
+        graph = master_table().connection.dependencies
+        graph.load()
+
+        child_names = list(master_table().children().keys())
+
     # get table context
     if not context:
         context = get_context(master_table)
@@ -106,13 +133,6 @@ def get_parts(master_table: DataJointTable, context: FrameType=None) -> List[Dat
 
     # full master table name (without schema)
     master_name = db_name.search(master_table.full_table_name).group(1)
-
-    graph = master_table().connection.dependencies
-    graph.load()
-
-
-    # child table names
-    child_names = list(master_table().children().keys())
 
     # part table names (children whose names are a subset of the master)
     part_names = [name for name in child_names

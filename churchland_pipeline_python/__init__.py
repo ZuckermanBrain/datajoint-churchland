@@ -16,7 +16,7 @@ import datajoint as dj
 # assign database prefix if not on production installation
 if os.getenv('MODE') and not re.match(r'datajoint\.u19motor\.zi\.columbia\.edu', dj.config['database.host']):
 
-    dj.config['database.prefix'] = os.getenv('MODE')
+    dj.config['database.prefix'] = os.getenv('MODE') + '_'
 
 else:
     dj.config['database.prefix'] = ''

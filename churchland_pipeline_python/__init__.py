@@ -1,29 +1,22 @@
-import datajoint as dj
+# load env file
 import os, re, glob
 from os.path import dirname, basename, isfile, join
 from dotenv import load_dotenv, find_dotenv
 
-# load env file
-load_dotenv(join(dirname(__file__), '..', '.env'))
+try:
+    load_dotenv(join(dirname(__file__), '..', '.env'))
+except:
+    pass
+else:
+    pass
 
-# env dict
-dj_env = {
-    'DJ_HOST': 'database.host',
-    'DJ_USER': 'database.user',
-    'DJ_PASS': 'database.password'
-}
-
-# assign base config settings from env file
-for env_name, config_name in dj_env.items():
-
-    if os.getenv(env_name):
-
-        dj.config[config_name] = os.getenv(env_name)
+# import datajoint
+import datajoint as dj
 
 # assign database prefix if not on production installation
 if os.getenv('MODE') and not re.match(r'datajoint\.u19motor\.zi\.columbia\.edu', dj.config['database.host']):
 
-    dj.config['database.prefix'] = os.getenv('MODE')
+    dj.config['database.prefix'] = os.getenv('MODE') + '_'
 
 else:
     dj.config['database.prefix'] = ''

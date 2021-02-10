@@ -1,26 +1,30 @@
-# load env file
 import os, re, glob
+import datajoint as dj
 from os.path import dirname, basename, isfile, join
-from dotenv import load_dotenv, find_dotenv
+from dotenv import dotenv_values, find_dotenv
+
+dj_env = {
+    'DJ_HOST': 'database.host',
+    'DJ_USER': 'database.user',
+    'DJ_PASS': 'database.password'
+}
 
 try:
-    load_dotenv(join(dirname(__file__), '..', '.env'))
+    env_values = dotenv_values(find_dotenv())
 except:
-    pass
-else:
-    pass
+    env_values = {}
 
-# import datajoint
-import datajoint as dj
+for env_name, config_name in dj_env.items():
+    if env_name in env_values.keys():
+        dj.config[config_name] = env_values[env_name]
 
-# assign database prefix if not on production installation
-if os.getenv('MODE') and not re.match(r'datajoint\.u19motor\.zi\.columbia\.edu', dj.config['database.host']):
-
-    dj.config['database.prefix'] = os.getenv('MODE') + '_'
-
+running_production = re.match(r'datajoint\.u19motor\.zi\.columbia\.edu', dj.config['database.host'])
+if 'MODE' in env_values.keys() and not running_production:
+    dj.config['database.prefix'] = env_values['MODE'] + '_'
 else:
     dj.config['database.prefix'] = ''
 
 # update list of all modules
 modules = glob.glob(join(dirname(__file__), "*.py"))
-__all__ = [basename(f)[:-3] for f in modules if isfile(f) and not f.endswith('__init__.py') and not f.endswith('common.py')]
+__all__ = [basename(f)[:-3] for f in modules \
+    if isfile(f) and not f.endswith('__init__.py') and not f.endswith('common.py')]

@@ -279,6 +279,9 @@ def join_parts(
     return joined_table, part_tables
 
 
+def randsample_keys(table: DataJointTable, n_keys: int=1) -> List[dict]:
+    return table.proj(rand_id='rand()').fetch('KEY', order_by='rand_id', limit=n_keys)
+
 def read_attributes(table: DataJointTable) -> dict:
     """Reads the attribute names and default values for a table."""
 

@@ -15,7 +15,7 @@ with open(path.join(here, 'requirements.txt')) as f:
 
 setup(
     name='datajoint-churchland',
-    version='0.0.0',
+    version='1.0.0',
     description='Datajoint schemas for Mark Churchland lab of Columbia U19',
     author='Najja Marshall',
     author_email='njm2149@columbia.edu',

@@ -1,5 +1,6 @@
 bokeh>=1.2
 colorcet
+cmocean
 datajoint>=0.12
 GitPython
 holoviews

@@ -66,15 +66,17 @@ def get_children(table: DataJointTable, context: FrameType=None) -> List[DataJoi
     """Gets all child tables of a table."""
 
     # child table names
-    child_names = list(table().children().keys())
-
-    if not child_names:
-
-        # load graph
-        graph = table().connection.dependencies
-        graph.load()
-
+    try:
         child_names = list(table().children().keys())
+    except AttributeError:
+        load_graph = True
+    else:
+        load_graph = True if not any(child_names) else False
+    finally:
+        if load_graph:
+            graph = table().connection.dependencies
+            graph.load()
+            child_names = list(table().children().keys())
 
     # get table context
     if not context:
@@ -89,16 +91,18 @@ def get_children(table: DataJointTable, context: FrameType=None) -> List[DataJoi
 def get_parents(table: DataJointTable, context: FrameType=None) -> List[DataJointTable]:
     """Gets all parent tables of a table."""
 
-    # get parent names
-    parent_names = list(table().parents().keys())
-
-    if not parent_names:
-
-        # load graph
-        graph = table().connection.dependencies
-        graph.load()
-
+    # parent table names
+    try:
         parent_names = list(table().parents().keys())
+    except AttributeError:
+        load_graph = True
+    else:
+        load_graph = True if not any(parent_names) else False
+    finally:
+        if load_graph:
+            graph = table().connection.dependencies
+            graph.load()
+            parent_names = list(table().parents().keys())
 
     # get table context
     if not context:
@@ -114,15 +118,17 @@ def get_parts(master_table: DataJointTable, context: FrameType=None) -> List[Dat
     """Gets all part tables of a master table."""
 
     # child table names
-    child_names = list(master_table().children().keys())
-
-    if not child_names:
-
-        # load graph
-        graph = master_table().connection.dependencies
-        graph.load()
-
+    try:
         child_names = list(master_table().children().keys())
+    except AttributeError:
+        load_graph = True
+    else:
+        load_graph = True if not any(child_names) else False
+    finally:
+        if load_graph:
+            graph = master_table().connection.dependencies
+            graph.load()
+            child_names = list(master_table().children().keys())
 
     # get table context
     if not context:

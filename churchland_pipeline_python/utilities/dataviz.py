@@ -189,8 +189,13 @@ def plot_table(
             if style['kind'] == 'line':
                 for trial, (kk, xx, yy, cc) in enumerate(zip(axs_keys, x_data, y_data, cmap)):
 
-                    line_label = (labels[stack_by[0]].format(kk[stack_by[0]]) \
-                        if stack_by and stack_by[0] in labels.keys() and axes['show_legend'] else '')
+                    if (labels is not None and stack_by) \
+                        and (stack_by[0] in labels.keys()) \
+                        and axes['show_legend']:
+
+                        line_label = labels[stack_by[0]].format(kk[stack_by[0]])
+                    else:
+                        line_label = ''
 
                     if axes['sparse_legend'] and trial in range(1, len(axs_keys)-1):
                         line_label = ''
@@ -247,7 +252,7 @@ def plot_table(
                 axs[nd_idx].legend()
 
             # label axes
-            if labels:
+            if labels is not None:
 
                 # x-axis
                 if x in labels.keys():

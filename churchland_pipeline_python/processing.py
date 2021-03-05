@@ -6,7 +6,7 @@ import numpy as np
 import scipy.io as sio
 import matplotlib.pyplot as plt
 from . import acquisition, equipment, reference
-from .utilities import datasync
+from .utilities import datasync, datajointutils
 from scipy import signal
 from decimal import *
 
@@ -647,3 +647,57 @@ class Neuron(dj.Imported):
 
         # insert templates
         self.Template.insert(template_keys)
+
+
+# =======
+# LEVEL 2
+# =======
+
+@schema
+class ManuscriptDataIndices(dj.Lookup):
+    definition = """
+    # Collection of indices assigned to neurons, motor units, etc. within a manuscript
+    manuscript_id:    smallint unsigned # manuscript ID number
+    ---
+    manuscript_title: varchar(1012)
+    """
+
+    class MotorUnit(dj.Part):
+        definition = """
+        -> master
+        -> MotorUnit
+        ---
+        manuscript_motor_unit_id: smallint unsigned # unique within the dataset
+        unique index (manuscript_motor_unit_id)
+        """
+
+    class Neuron(dj.Part):
+        definition = """
+        -> master
+        -> Neuron
+        ---
+        manuscript_neuron_id: smallint unsigned # unique within the dataset
+        unique index (manuscript_neuron_id)
+        """
+
+    @classmethod
+    def insert_new_dataset(self, title, motor_units: MotorUnit=None, neurons: Neuron=None):
+
+        manuscript_id = datajointutils.next_unique_int(self, 'manuscript_id')
+        self.insert1((manuscript_id, title))
+
+        if motor_units is not None:
+            motor_unit_keys = motor_units.fetch('KEY')
+            for idx, motor_unit_key in enumerate(motor_unit_keys):
+                motor_unit_key.update(manuscript_id=manuscript_id, manuscript_motor_unit_id=idx)
+            
+            self.MotorUnit.insert(motor_unit_keys)
+
+        if neurons is not None:
+            neuron_keys = neurons.fetch('KEY')
+            for idx, neuron_key in enumerate(neuron_keys):
+                neuron_key.update(manuscript_id=manuscript_id, manuscript_neuron_id=idx)
+            
+            self.Neuron.insert(neuron_keys)
+
+        

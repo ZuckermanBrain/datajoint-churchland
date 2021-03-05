@@ -666,14 +666,18 @@ class ManuscriptDataIndices(dj.Lookup):
         definition = """
         -> master
         -> MotorUnit
+        ---
         manuscript_motor_unit_id: smallint unsigned # unique within the dataset
+        unique index (manuscript_motor_unit_id)
         """
 
     class Neuron(dj.Part):
         definition = """
         -> master
         -> Neuron
+        ---
         manuscript_neuron_id: smallint unsigned # unique within the dataset
+        unique index (manuscript_neuron_id)
         """
 
     @classmethod

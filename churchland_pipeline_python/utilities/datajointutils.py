@@ -67,7 +67,7 @@ def get_children(table: DataJointTable, context: FrameType=None) -> List[DataJoi
 
     # child table names
     try:
-        child_names = list(table().children().keys())
+        child_names = table().children()
     except AttributeError:
         load_graph = True
     else:
@@ -76,14 +76,28 @@ def get_children(table: DataJointTable, context: FrameType=None) -> List[DataJoi
         if load_graph:
             graph = table().connection.dependencies
             graph.load()
-            child_names = list(table().children().keys())
+            child_names = table().children()
+        if isinstance(child_names, dict):
+            child_names = list(child_names.keys())
+        elif isinstance(child_names, list):
+            pass
+        else:
+            child_names = []
+        child_names = [x for x in child_names if isinstance(x,str) and re.match(r'`.*`\.`.*`',x) is not None]
 
     # get table context
     if not context:
         context = get_context(table)
 
     # get child tables
-    children = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in child_names]
+    children = []
+    for name in child_names:
+        try:
+            child = eval(dj.table.lookup_class_name(name, context.f_globals), context.f_globals)
+        except TypeError:
+            pass
+        else:
+            children.append(child)
 
     return children
 
@@ -93,7 +107,7 @@ def get_parents(table: DataJointTable, context: FrameType=None) -> List[DataJoin
 
     # parent table names
     try:
-        parent_names = list(table().parents().keys())
+        parent_names = table().parents()
     except AttributeError:
         load_graph = True
     else:
@@ -103,13 +117,27 @@ def get_parents(table: DataJointTable, context: FrameType=None) -> List[DataJoin
             graph = table().connection.dependencies
             graph.load()
             parent_names = list(table().parents().keys())
+        if isinstance(parent_names, dict):
+            parent_names = list(parent_names.keys())
+        elif isinstance(parent_names, list):
+            pass
+        else:
+            parent_names = []
+        parent_names = [x for x in parent_names if isinstance(x,str) and re.match(r'`.*`\.`.*`',x) is not None]
 
     # get table context
     if not context:
         context = get_context(table)
 
     # get parent tables
-    parents = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in parent_names]
+    parents = []
+    for name in parent_names:
+        try:
+            parent = eval(dj.table.lookup_class_name(name, context.f_globals), context.f_globals)
+        except TypeError:
+            pass
+        else:
+            parents.append(parent)
 
     return parents
 
@@ -119,7 +147,7 @@ def get_parts(master_table: DataJointTable, context: FrameType=None) -> List[Dat
 
     # child table names
     try:
-        child_names = list(master_table().children().keys())
+        child_names = master_table().children()
     except AttributeError:
         load_graph = True
     else:
@@ -128,7 +156,14 @@ def get_parts(master_table: DataJointTable, context: FrameType=None) -> List[Dat
         if load_graph:
             graph = master_table().connection.dependencies
             graph.load()
-            child_names = list(master_table().children().keys())
+            child_names = master_table().children()
+        if isinstance(child_names, dict):
+            child_names = list(child_names.keys())
+        elif isinstance(child_names, list):
+            pass
+        else:
+            child_names = []
+        child_names = [x for x in child_names if isinstance(x,str) and re.match(r'`.*`\.`.*`',x) is not None]
 
     # get table context
     if not context:
@@ -145,7 +180,14 @@ def get_parts(master_table: DataJointTable, context: FrameType=None) -> List[Dat
         if db_name.search(name) and master_name in db_name.search(name).group(1)]
 
     # get part tables
-    part_tables = [eval(dj.table.lookup_class_name(x, context.f_globals), context.f_globals) for x in part_names]
+    part_tables = []
+    for name in part_names:
+        try:
+            part_table = eval(dj.table.lookup_class_name(name, context.f_globals), context.f_globals)
+        except TypeError:
+            pass
+        else:
+            part_tables.append(part_table)
 
     return part_tables
 

@@ -4,7 +4,7 @@ import neo
 from . import lab, equipment, reference, action
 from typing import List, Tuple
 
-schema = dj.schema(dj.config.get('database.prefix') + 'churchland_common_acquisition') 
+schema = dj.schema(dj.config.get('database.prefix') + 'churchland_common_acquisition')
 
 # =======
 # LEVEL 0
@@ -19,7 +19,7 @@ class Task(dj.Lookup):
     ---
     task_description = '': varchar(255) # additional task details
     """
-    
+
     contents = [
         ['pacman',               '1.0',     '1-dimensional force tracking']
     ]
@@ -56,10 +56,10 @@ class Session(dj.Manual):
         ---
         session_notes = '': varchar(4095)    # session notes text
         """
-        
+
         def printnotes(self):
             """Fetch and print notes."""
-            
+
             for key in self:
                 print((self & key).fetch1('session_notes'))
 
@@ -146,7 +146,7 @@ class EphysRecording(dj.Manual):
 
             # load file based on file extension
             ephys_file_extension = self.fetch1('ephys_file_extension')
-             
+
             if re.match('ns\d$', ephys_file_extension):
 
                 reader = neo.rawio.BlackrockRawIO(ephys_file_path)
@@ -175,7 +175,37 @@ class EphysRecording(dj.Manual):
         ephys_channel_id = null: smallint unsigned                    # channel ID number used by Blackrock system
         ephys_channel_type:      enum('brain', 'emg', 'sync', 'stim') # channel data type
         """
-    
+
+
+@schema
+class ProbeInsertion(dj.Manual):
+    definition = """
+    -> Session
+    probe_insertion_id:    tinyint unsigned
+    """
+
+    class File(dj.Manual):
+        definition = """
+        -> master
+        EphysRecording.File
+        """
+
+
+@schema
+class InsertionLocation(dj.Manual):
+    definition = """
+    # Brain Location of a given probe insertion.
+    -> ProbeInsertion
+    ---
+    skull_reference: enum('lambda', 'bregma')
+    ap_location: decimal(6, 2) # (um) anterior-posterior; ref is 0; more anterior is more positive
+    ml_location: decimal(6, 2) # (um) medial axis; ref is 0 ; more right is more positive
+    depth:       decimal(6, 2) # (um) manipulator depth relative to surface of the brain (0); more ventral is more negative
+    theta=null:  decimal(5, 2) # (deg) - elevation - rotation about the ml-axis [0, 180] - w.r.t the z+ axis
+    phi=null:    decimal(5, 2) # (deg) - azimuth - rotation about the dv-axis [0, 360] - w.r.t the x+ axis
+    beta=null:   decimal(5, 2) # (deg) rotation about the shank of the probe [-180, 180] - clockwise is increasing in degree - 0 is the probe-front facing anterior
+    """
+
 
 @schema
 class EphysStimulation(dj.Manual):

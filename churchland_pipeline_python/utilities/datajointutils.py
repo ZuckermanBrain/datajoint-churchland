@@ -15,7 +15,7 @@ from functools import reduce
 from types import FrameType
 from typing import NewType, Tuple, List
 
-DataJointTable = dj.user_tables.OrderedClass
+DataJointTable = dj.user_tables.Table
 
 def flatten_blobs(records: list, blob_names: list) -> list:
     """Flattens a list of dictionaries containing vector-valued attributes ("blobs").

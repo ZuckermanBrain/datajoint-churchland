@@ -16,7 +16,7 @@ from typing import NewType, Tuple, List, Any
 
 import timeit
 
-DataJointTable = dj.user_tables.OrderedClass
+DataJointTable = dj.user_tables.UserTable
 
 # -------
 # GLOBALS
